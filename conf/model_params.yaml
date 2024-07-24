@@ -1,0 +1,12 @@
+defaults:
+  - _self_
+
+model_params:
+  sh_degree: 3
+  source_path: ""
+  model_path: ""
+  images: "images"
+  resolution: -1
+  white_background: false
+  data_device: "cuda"
+  eval: false

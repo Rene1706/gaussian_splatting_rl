@@ -1,0 +1,16 @@
+defaults:
+  - model_params: default
+  - pipeline_params: default
+  - optimization_params: default
+
+ip: "127.0.0.1"
+port: 6009
+debug_from: -1
+detect_anomaly: false
+test_iterations: [7000, 30000]
+save_iterations: [7000, 30000]
+quiet: false
+checkpoint_iterations: []
+start_checkpoint: null
+meta_model: "meta_model.torch"
+run_name: ""
