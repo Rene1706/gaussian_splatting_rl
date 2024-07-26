@@ -35,6 +35,8 @@ from utils.general_utils import safe_state
 from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
 import seaborn as sns
+import wandb
+from loggers import WandBLogger, WandBInitConfig
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -87,7 +89,6 @@ def visualize_grad_scaling(gaussians, name, scene, *, actions=None):
     g.ax_joint.text(1, scaling_threshold + 0.01, "Split", ha='right')
     g.ax_joint.text(1, scaling_threshold - 0.02, "Clone", ha='right')
     g.plot_marginals(sns.histplot, element="step")
-    # plt.title(name)
     plt_folder = Path(scene.model_path) / "grad_scale_plots"
     plt_folder.mkdir(exist_ok=True, parents=True)
     plt.savefig(plt_folder / f"{name}.jpg")
@@ -113,14 +114,13 @@ def training(
         checkpoint,
         debug_from,
         run_name="",
-        meta_model=""
+        meta_model="",
+        train_type=""
 ):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     init_gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, init_gaussians)
-    #if run_name == "":
-    #    run_name = scene.name
 
     init_gaussians.training_setup(opt)
     if checkpoint:
@@ -141,29 +141,25 @@ def training(
     log_probability_candidates = None  # None for first iteration, as we have no log_probability_candidates
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    #action_selector = GradNormThresholdSelector(
-    #    k=2,
-    #    init_threshold=opt.densify_grad_threshold,
-    #)
-    action_selector = ParamBasedActionSelector().to("cuda")
+
+    if train_type == "train":
+        k = 2
+    elif train_type == "eval":
+        k = 1
+    action_selector = ParamBasedActionSelector(k=k).to("cuda")
     
     # RENE: Commented out so model is not loaded
     if meta_model and Path(meta_model).exists():
         print(f"Loading meta_model from {meta_model}")
         action_selector.load_state_dict(torch.load(meta_model))
 
-    policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=0.01)
-    # action_selector = OldActionSelector(
-    #     k=2,
-    #     grad_threshold=opt.densify_grad_threshold,
-    #     opacity_reset_interval=opt.opacity_reset_interval
-    # )
+    policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=0.001)
     candidates_created = 0  # Counter when the last candidates were created
     for iteration in range(first_iter, opt.iterations + 1):
         if iteration - candidates_created > opt.densification_interval * 5:
             # Select best gaussians if densification is over
             gaussians_best_idx = torch.stack(gaussian_selection_rewards).argmax()
-            print(f"Rewards: {gaussian_selection_rewards}, idx: {gaussians_best_idx}")
+            #print(f"Rewards: {gaussian_selection_rewards}, idx: {gaussians_best_idx}")
             gaussians = gaussian_candidate_list[gaussians_best_idx]
             scene.gaussians = gaussians
             gaussian_candidate_list.clear()
@@ -171,40 +167,6 @@ def training(
             gaussian_candidate_list.append(gaussians)
             gaussian_selection_rewards.append(0)
             candidates_created = opt.iterations + 1  # Do not do this again
-
-
-        if network_gui.conn is None:
-            network_gui.try_connect()
-        while network_gui.conn is not None:
-            try:
-                net_image_bytes = None
-                (
-                    custom_cam,
-                    do_training,
-                    pipe.convert_SHs_python,
-                    pipe.compute_cov3D_python,
-                    keep_alive,
-                    scaling_modifier,
-                ) = network_gui.receive()
-                if custom_cam is not None:
-                    net_image = render(
-                        custom_cam, gaussians, pipe, background, scaling_modifier
-                    )["render"]
-                    net_image_bytes = memoryview(
-                        (torch.clamp(net_image, min=0, max=1.0) * 255)
-                        .byte()
-                        .permute(1, 2, 0)
-                        .contiguous()
-                        .cpu()
-                        .numpy()
-                    )
-                network_gui.send(net_image_bytes, dataset.source_path)
-                if do_training and (
-                        (iteration < int(opt.iterations)) or not keep_alive
-                ):
-                    break
-            except Exception:
-                network_gui.conn = None
 
         # Actual training start
         iter_start.record()
@@ -239,6 +201,7 @@ def training(
             Ll1 = l1_loss(image, gt_image)
             ssim_value = ssim(image, gt_image)
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
+    
             loss.backward()
 
             # Keep track of max radii in image-space for pruning
@@ -251,8 +214,12 @@ def training(
 
             # TODO: Calculate better reward for gaussian selection
             penalty_factor = 0.1
-            gaussian_selection_rewards[i] = -loss.detach() - penalty_factor * gaussians.num_points#/ gaussians.num_points#math.log(gaussians.num_points)
+            reward = -loss.detach() - penalty_factor * gaussians.num_points#/ gaussians.num_points#math.log(gaussians.num_points)
+            gaussian_selection_rewards[i] = reward
 
+            #TODO Rene implement wandblogger
+            with torch.no_grad():
+                wandb_logger.log_train_iter_candidate(iteration, gaussians, Ll1, ssim_value, loss, reward, image, gt_image)
         iter_end.record()
 
         with torch.no_grad():
@@ -261,8 +228,8 @@ def training(
             if iteration % 10 == 0:
                 progress_bar.set_postfix({
                     "Loss": f"{ema_loss_for_log:.{7}f}",
-                    "n_candidates": len(gaussian_candidate_list)#,
-                    #"n_gaussians": gaussians.num_points
+                    "n_candidates": len(gaussian_candidate_list),
+                    "n_gaussians": gaussians.num_points
                 })
                 progress_bar.update(10)
             if iteration == opt.iterations:
@@ -270,20 +237,6 @@ def training(
 
             # Log and save
             scene.gaussians = gaussian_candidate_list[torch.stack(gaussian_selection_rewards).argmax()]
-            training_report(
-                tb_writer,
-                iteration,
-                Ll1,
-                loss,
-                l1_loss,
-                iter_start.elapsed_time(iter_end),
-                testing_iterations,
-                scene,
-                render,
-                (pipe, background),
-                run_name,
-                args.model_path
-            )
             if iteration in saving_iterations:
                 print(f"\n[ITER {iteration}] Saving Gaussians")
                 scene.save(iteration)
@@ -294,22 +247,20 @@ def training(
                     if log_probability_candidates is not None:
                         # Update meta policy
                         # Rene: Make this true variable a parameter to controll if meta model should be learned or just used.
-                        if True:
+                        if train_type=="train":
                             with torch.enable_grad():
                                 policy_optimizer.zero_grad(set_to_none=True)
                                 rewards = torch.stack(gaussian_selection_rewards).squeeze()
                                 advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
                                 expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates)
-                                #print(advantage.shape)
-                                #print(log_probability_candidates.shape)
+
                                 loss = -torch.mean(log_probability_candidates * expanded_advantage)
                                 loss.backward()
                                 policy_optimizer.step()
-                                #print(f"Policy loss: {loss.item()}, New mu: {action_selector.mu.item()}")
 
                     # Select best gaussian
                     gaussians_best_idx = torch.stack(gaussian_selection_rewards).argmax()
-                    print(f"Rewards: {gaussian_selection_rewards}, idx: {gaussians_best_idx}")
+                    #print(f"Rewards: {gaussian_selection_rewards}, idx: {gaussians_best_idx}")
                     gaussians = gaussian_candidate_list[gaussians_best_idx]
                     scene.gaussians = gaussians
                     size_threshold = (
@@ -323,14 +274,14 @@ def training(
                             iteration=iteration,
                             scene_extent=scene.cameras_extent
                         )
-                    #print("ActionCan: ", action_candidates.shape)
-                    #print("LogProbCan: ", log_probability_candidates.shape)
+
                     gaussian_candidate_list.clear()
                     gaussian_selection_rewards.clear()
                     for i, actions in enumerate(action_candidates):
                         gaussian_clone = deepcopy(gaussians)
                         visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
-                        apply_actions(gaussian_clone, actions, 0.005, size_threshold, scene.cameras_extent)
+                        n_cloned, n_splitted, n_pruned, n_gaussians, n_noop = apply_actions(gaussian_clone, actions, 0.005, size_threshold, scene.cameras_extent)
+                        wandb_logger.log_densification_step(iteration, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop)
                         gaussian_candidate_list.append(gaussian_clone)
                         gaussian_selection_rewards.append(0)
 
@@ -394,22 +345,29 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
             torch.zeros(n_cloned_points + n_splitted_points, device="cuda", dtype=torch.bool),
         ]
     )
-    print(f"Cloned: {n_cloned_points}, "
-          f"Splitted: {n_splitted_points}, "
-          f"Pruned: {torch.sum(prune_mask)}, "
+    n_pruned_points = torch.sum(prune_mask)
+    n_noop_points = torch.sum(noop_mask)
+    n_gaussians = gaussians.num_points
+
+    print(f"Cloned: {n_cloned_points}",
+          f"Splitted: {n_splitted_points}",
+          f"Pruned: {n_pruned_points}",
           f"NOOP: {torch.sum(noop_mask)}",
-          f"NUMP: {gaussians.num_points}")
+          f"NUMP: {n_gaussians}")
 
     # Clone and split
     gaussians.densify_and_clone_selected(clone_mask)
     gaussians.densify_and_split_selected(split_mask, N=N)
 
-    gaussians.select_and_prune_points(min_opacity, max_screen_size, extent)
+    #print("PRUNE MASK ME: ", prune_mask.shape)
+    gaussians.select_and_prune_points(prune_mask)
+    #gaussians.select_and_prune_points(min_opacity, max_screen_size, extent)
     # Open the CSV file for appending
-    with open("densifcation.csv", mode='a', newline='') as log_file:
-        writer = csv.writer(log_file)
-        writer.writerow([0, n_cloned_points, n_splitted_points, torch.sum(prune_mask), gaussians.num_points])
+    #with open("densifcation.csv", mode='a', newline='') as log_file:
+    #    writer = csv.writer(log_file)
+    #    writer.writerow([0, n_cloned_points, n_splitted_points, torch.sum(prune_mask), gaussians.num_points])
     torch.cuda.empty_cache()
+    return n_cloned_points.item(), n_splitted_points.item(), n_pruned_points.item(), gaussians.num_points, n_noop_points.item()
 
 
 def prepare_output_and_logger(args):
@@ -436,90 +394,6 @@ def prepare_output_and_logger(args):
     return tb_writer
 
 
-def training_report(
-        tb_writer,
-        iteration,
-        Ll1,
-        loss,
-        l1_loss,
-        elapsed,
-        testing_iterations,
-        scene: Scene,
-        renderFunc,
-        renderArgs,
-        run_name:str,
-        model_path:str
-):
-    if tb_writer:
-        tb_writer.add_scalar("train_loss_patches/l1_loss", Ll1.item(), iteration)
-        tb_writer.add_scalar("train_loss_patches/total_loss", loss.item(), iteration)
-        tb_writer.add_scalar("iter_time", elapsed, iteration)
-
-    # Report test and samples of training set
-    if iteration in testing_iterations:
-        torch.cuda.empty_cache()
-        validation_configs = (
-            {"name": "test", "cameras": scene.get_test_cameras()},
-            {
-                "name": "train",
-                "cameras": [
-                    scene.get_train_cameras()[idx % len(scene.get_train_cameras())]
-                    for idx in range(5, 30, 5)
-                ],
-            },
-        )
-
-        for config in validation_configs:
-            if config["cameras"] and len(config["cameras"]) > 0:
-                l1_test = 0.0
-                psnr_test = 0.0
-                for idx, viewpoint in enumerate(config["cameras"]):
-                    image = torch.clamp(
-                        renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"],
-                        0.0,
-                        1.0,
-                    )
-                    gt_image = torch.clamp(
-                        viewpoint.original_image.to("cuda"), 0.0, 1.0
-                    )
-                    if tb_writer and (idx < 5):
-                        tb_writer.add_images(
-                            config["name"]
-                            + f"_view_{viewpoint.image_name}/render",
-                            image[None],
-                            global_step=iteration,
-                        )
-                        if iteration == testing_iterations[0]:
-                            tb_writer.add_images(
-                                config["name"]
-                                + f"_view_{viewpoint.image_name}/ground_truth",
-                                gt_image[None],
-                                global_step=iteration,
-                            )
-                    l1_test += l1_loss(image, gt_image).mean().double()
-                    psnr_test += psnr(image, gt_image).mean().double()
-                psnr_test /= len(config["cameras"])
-                l1_test /= len(config["cameras"])
-                print(f"\n[ITER {iteration}] Evaluating {config['name']}: L1 {l1_test} PSNR {psnr_test}")
-                save_to_log(run_name, iteration, psnr_test, l1_test, scene.gaussians.xyz.shape[0], Path(model_path).name)
-                if tb_writer:
-                    tb_writer.add_scalar(
-                        config["name"] + "/loss_viewpoint - l1_loss", l1_test, iteration
-                    )
-                    tb_writer.add_scalar(
-                        config["name"] + "/loss_viewpoint - psnr", psnr_test, iteration
-                    )
-
-        if tb_writer:
-            tb_writer.add_histogram(
-                "scene/opacity_histogram", scene.gaussians.opacities, iteration
-            )
-            tb_writer.add_scalar(
-                "total_points", scene.gaussians.xyz.shape[0], iteration
-            )
-        torch.cuda.empty_cache()
-
-
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
@@ -541,6 +415,7 @@ if __name__ == "__main__":
     parser.add_argument("--start_checkpoint", type=str, default=None)
     parser.add_argument("--meta_model", type=str, default="meta_model.torch")
     parser.add_argument("--run_name", type=str, default="")
+    parser.add_argument("--group", type=str, default="train")
 
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
@@ -555,6 +430,9 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
+    # Example usage
+    wandb_config = WandBInitConfig(project='my_project', name='experiment_name', group=args.group, mode='offline')
+    wandb_logger = WandBLogger(wandb_config)
     training(
         lp.extract(args),
         op.extract(args),
@@ -566,31 +444,8 @@ if __name__ == "__main__":
         args.debug_from,
         args.run_name,
         meta_model=args.meta_model,
+        train_type=args.group
     )
 
     # All done
     print("\nTraining complete.")
-"""
-if __name__ == "__main__":
-    with initialize(config_path="conf"):
-        cfg = compose(config_name="config")
-
-    model_params = cfg.model_params
-    pipeline_params = cfg.pipeline_params
-    optimization_params = cfg.optimization_params
-
-    training(
-        model_params,
-        optimization_params,
-        pipeline_params,
-        cfg.test_iterations,
-        cfg.save_iterations,
-        cfg.checkpoint_iterations,
-        cfg.start_checkpoint,
-        cfg.debug_from,
-        cfg.run_name,
-        meta_model=cfg.meta_model,
-    )
-    
-    print("\nTraining complete.")
-    """

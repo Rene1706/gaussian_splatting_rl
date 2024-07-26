@@ -1,16 +1,62 @@
 defaults:
-  - model_params: default
-  - pipeline_params: default
-  - optimization_params: default
+  - _self_
 
-ip: "127.0.0.1"
-port: 6009
-debug_from: -1
-detect_anomaly: false
-test_iterations: [7000, 30000]
-save_iterations: [7000, 30000]
-quiet: false
-checkpoint_iterations: []
-start_checkpoint: null
-meta_model: "meta_model.torch"
-run_name: ""
+model_params:
+  sh_degree: 3
+  source_path:
+  model_path:
+  images: "images"
+  resolution: -1
+  white_background: false
+  data_device: "cuda"
+  eval: false
+
+pipeline_params:
+  convert_SHs_python: false
+  compute_cov3D_python: false
+  debug: false
+
+optimization_params:
+  iterations: 2000
+  position_lr_init: 0.00016
+  position_lr_final: 0.0000016
+  position_lr_delay_mult: 0.01
+  position_lr_max_steps: 30000
+  feature_lr: 0.0025
+  opacity_lr: 0.05
+  scaling_lr: 0.005
+  rotation_lr: 0.001
+  percent_dense: 0.01
+  lambda_dssim: 0.2
+  densification_interval: 100
+  opacity_reset_interval: 3000
+  densify_from_iter: 100
+  densify_until_iter: 15000
+  densify_grad_threshold: 0.0002
+  random_background: false
+
+eval_params:
+  skip_training: false
+  skip_rendering: false
+  skip_metrics: false
+  skip_eval: false
+  output_path: "./eval"
+  data_path: "data/MAD-Sim_3dgs"
+  iterations: 2
+  
+  
+script_params:
+  test_iterations: [1500]
+  save_iterations: [1500]
+  checkpoint_iterations: []
+  start_checkpoint: null
+  meta_model: "meta_model.torch"
+  run_name:
+  ip: "127.0.0.1"
+  port: 6009
+  debug_from: -1
+  detect_anomaly: false
+  quiet: false
+  group: "train"
+
+training_script: "python train_reinforce.py"

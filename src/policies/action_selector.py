@@ -205,8 +205,8 @@ class ParamBasedActionSelector(ActionSelector):
         logits = self.param_network(inputs)
         action_probs = torch.softmax(logits, dim=-1)
         # Print logits and action probabilities for debugging
-        print("Logits: ", logits)
-        print("Action probabilities: ", action_probs)
+        #print("Logits: ", logits)
+        #print("Action probabilities: ", action_probs)
         
         # Probabilistically sample k action candidates using rsample
         action_dist = torch.distributions.Categorical(action_probs)

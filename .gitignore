@@ -8,3 +8,6 @@ tensorboard_3d
 screenshots
 data
 submodules
+wandb
+*.csv
+*.torch
