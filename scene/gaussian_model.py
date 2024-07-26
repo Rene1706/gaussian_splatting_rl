@@ -458,15 +458,19 @@ class GaussianModel:
         self.densify_and_split(grads, max_grad, camera_extent)
         self.select_and_prune_points(min_opacity, max_screen_size, camera_extent)
 
-    def select_and_prune_points(self, min_opacity: float, max_screen_size: float, extent: float):
-        prune_mask = (self.get_opacity < min_opacity).squeeze()
-        if max_screen_size:
-            big_points_vs = self.max_radii2D > max_screen_size
-            big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
-            prune_mask |= big_points_vs | big_points_ws
+    #def select_and_prune_points(self, min_opacity: float, max_screen_size: float, extent: float):
+    #    prune_mask = (self.get_opacity < min_opacity).squeeze()
+    #    if max_screen_size:
+    #        big_points_vs = self.max_radii2D > max_screen_size
+    #        big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
+    #        prune_mask |= big_points_vs | big_points_ws
+    #    print("PRUNE MASK GS: ", prune_mask.shape)
+    #    self.prune_points(prune_mask)
 
+    #    torch.cuda.empty_cache()
+
+    def select_and_prune_points(self, prune_mask):
         self.prune_points(prune_mask)
-
         torch.cuda.empty_cache()
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
