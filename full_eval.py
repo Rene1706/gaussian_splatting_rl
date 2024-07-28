@@ -70,6 +70,7 @@ def train_and_evaluate(cfg, datasets, output_path):
         full_eval_output_path = os.path.join("./output/", f"full_eval_{unique_str}")
         os.makedirs(full_eval_output_path, exist_ok=True)
         cfg.script_params.eval_output_path= full_eval_output_path
+        print("Created output directory:", full_eval_output_path)
 
         # Sample random datasets for training and evaluation
         train_dataset = random.choice(datasets)

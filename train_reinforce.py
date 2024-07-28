@@ -228,7 +228,7 @@ def training(
 
             #TODO Rene implement wandblogger
             with torch.no_grad():
-                wandb_logger.log_train_iter_candidate(iteration, gaussians, Ll1, ssim_value, loss, reward, image, gt_image)
+                wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, ssim_value, loss, reward, image, gt_image)
         iter_end.record()
 
         with torch.no_grad():
@@ -290,7 +290,7 @@ def training(
                         gaussian_clone = deepcopy(gaussians)
                         visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
                         n_cloned, n_splitted, n_pruned, n_gaussians, n_noop = apply_actions(gaussian_clone, actions, 0.005, size_threshold, scene.cameras_extent)
-                        wandb_logger.log_densification_step(iteration, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop)
+                        wandb_logger.log_densification_step(iteration, i, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop)
                         gaussian_candidate_list.append(gaussian_clone)
                         gaussian_selection_rewards.append(0)
 

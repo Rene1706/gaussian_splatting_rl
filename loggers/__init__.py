@@ -19,32 +19,32 @@ class WandBLogger:
         self.config = config
         self.image_interval = 200
 
-    def log_train_iter_candidate(self, iteration, gaussians: GaussianModel, Ll1, ssim_value, loss, reward, image, gt_image):
+    def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, ssim_value, loss, reward, image, gt_image):
         # Log these metrics every iteration
         wandb.log({
-            'train_iter/l1_loss': Ll1.item(),
-            'train_iter/loss': loss.item(),
-            'train_iter/ssim': ssim_value.item(),
-            'train_iter/reward': reward.item(),
-        #    'train_iter/num_points': gaussians.num_points,
+            f'train_iter/candidate_{candidate_index}/l1_loss': Ll1.item(),
+            f'train_iter/candidate_{candidate_index}/loss': loss.item(),
+            f'train_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
+            f'train_iter/candidate_{candidate_index}/reward': reward.item(),
+        #    f'train_iter/candidate_{candidate_index}num_points': gaussians.num_points,
         }, step=iteration)
         
         # Log these metrics at intervals specified by self.image_interval
         if iteration % self.image_interval == 0:
             wandb.log({
-                'train_iter/opacities': wandb.Histogram(gaussians.get_opacity.detach().cpu().numpy()),
-                'train_iter/scaling_max': wandb.Histogram(gaussians.get_scaling.detach().max(dim=1).values.cpu().numpy()),
-                'train_iter/gt_image': [wandb.Image(gt_image, caption="Ground Truth")],
-                'train_iter/pred_image': [wandb.Image(image, caption="Prediction")]
+                f'train_iter/candidate_{candidate_index}/opacities': wandb.Histogram(gaussians.get_opacity.detach().cpu().numpy()),
+                f'train_iter/candidate_{candidate_index}/scaling_max': wandb.Histogram(gaussians.get_scaling.detach().max(dim=1).values.cpu().numpy()),
+                f'train_iter/candidate_{candidate_index}/gt_image': [wandb.Image(gt_image, caption="Ground Truth")],
+                f'train_iter/candidate_{candidate_index}/pred_image': [wandb.Image(image, caption="Prediction")]
             }, step=iteration)
 
-    def log_densification_step(self, iteration, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop):
+    def log_densification_step(self, iteration, candidate_index, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop):
         wandb.log({
-            'densification_step/n_cloned': n_cloned,
-            'densification_step/n_splitted': n_splitted,
-            'densification_step/n_pruned': n_pruned,
-            'densification_step/n_gaussians': n_gaussians,
-            'densification_step/n_noop': n_noop,
+            f'densification_step/candidate_{candidate_index}/n_cloned': n_cloned,
+            f'densification_step/candidate_{candidate_index}/n_splitted': n_splitted,
+            f'densification_step/candidate_{candidate_index}/n_pruned': n_pruned,
+            f'densification_step/candidate_{candidate_index}/n_gaussians': n_gaussians,
+            f'densification_step/candidate_{candidate_index}/n_noop': n_noop,
         }, step=iteration)
 
     def log_evaluation(self, iteration, gaussians: GaussianModel, scene: Scene, renderFunc, renderArgs: tuple):
