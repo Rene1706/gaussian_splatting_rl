@@ -8,31 +8,14 @@ from gaussian_renderer import render
 from scene.gaussian_model import GaussianModel
 from scene import Scene
 from utils.loss_utils import l1_loss, ssim
-
-
-@dataclass
-class WandBInitConfig:
-    project: str
-    entity: Optional[str] = None
-    name: Optional[str] = None
-    id: Optional[str] = None
-    job_type: Optional[str] = None
-    dir: Optional[Path] = None
-    reinit: Optional[bool] = None
-    tags: Optional[Sequence] = None
-    group: Optional[str] = None
-    notes: Optional[str] = None
-    anonymous: Optional[str] = None
-    mode: Optional[str] = None
-    resume: Optional[Union[bool, str]] = None
-    force: Optional[bool] = None
-    save_code: Optional[bool] = None
-    sync_tensorboard: Optional[bool] = None
+from arguments import WandbParams
 
 
 class WandBLogger:
-    def __init__(self, config: WandBInitConfig):
-        wandb.init(**asdict(config))
+    def __init__(self, config: WandbParams):
+        filtered_config = {k: v for k, v in config.asdict().items() if v not in (None, '')}
+        print(filtered_config)
+        wandb.init(**filtered_config)
         self.config = config
         self.image_interval = 200
 

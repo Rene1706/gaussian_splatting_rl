@@ -12,9 +12,13 @@
 from argparse import ArgumentParser, Namespace
 import sys
 import os
+from dataclasses import dataclass, asdict, field
+from typing import Optional, Sequence, Union, Dict
+from pathlib import Path
 
 class GroupParams:
-    pass
+    def asdict(self):
+        return {key: value for key, value in vars(self).items() if not key.startswith("_")}
 
 class ParamGroup:
     def __init__(self, parser: ArgumentParser, name : str, fill_none = False):
@@ -34,6 +38,8 @@ class ParamGroup:
             else:
                 if t == bool:
                     group.add_argument("--" + key, default=value, action="store_true")
+                elif t == list:
+                    group.add_argument("--" + key, nargs="+", type=str, default=value)
                 else:
                     group.add_argument("--" + key, default=value, type=t)
 
@@ -43,6 +49,9 @@ class ParamGroup:
             if arg[0] in vars(self) or ("_" + arg[0]) in vars(self):
                 setattr(group, arg[0], arg[1])
         return group
+    
+    def asdict(self):
+        return {key: value for key, value in vars(self).items() if not key.startswith("_")}
 
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
@@ -88,6 +97,38 @@ class OptimizationParams(ParamGroup):
         self.densify_grad_threshold = 0.0002
         self.random_background = False
         super().__init__(parser, "Optimization Parameters")
+
+class RLParams(ParamGroup):
+    def __init__(self, parser):
+        self.rl_lr = 0.005
+        self.meta_model = "meta_model.torch"
+        self.train_rl = True
+        self.num_candidates = 2
+        self.reward_function = ""
+
+        super().__init__(parser, "RL Parameters")
+
+class WandbParams(ParamGroup):
+    def __init__(self, parser):
+        self.project = "my-project"
+        self.entity = ""
+        self.name = ""
+        self.id = None
+        self.job_type = None
+        self.dir = None
+        self.reinit = False
+        self.tags = []
+        self.group = ""
+        self.notes = ""
+        self.anonymous = ""
+        self.mode = "offline"
+        self.resume = None
+        self.force = False
+        self.save_code = True
+        self.sync_tensorboard = False
+        self.config = None
+
+        super().__init__(parser, "WandB Init Config")
 
 def get_combined_args(parser : ArgumentParser):
     cmdlne_string = sys.argv[1:]

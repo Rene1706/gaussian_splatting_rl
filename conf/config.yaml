@@ -57,6 +57,30 @@ script_params:
   debug_from: -1
   detect_anomaly: false
   quiet: false
-  group: "train"
+  
+wandb_params:
+  project: my-project
+  entity:
+  name: null
+  group: null
+  job_type: null
+  id: null
+  dir: null
+  reinit: false
+  tags: null
+  notes: null
+  anonymous: "never"
+  mode: "offline"
+  resume: null
+  force: false
+  sync_tensorboard: false
+  save_code: true
+
+rl_params:
+  rl_lr: 0.005
+  meta_model: "meta_model.torch"
+  train_rl: true
+  num_candidates: 2
+  reward_function: ""
 
 training_script: "python train_reinforce.py"

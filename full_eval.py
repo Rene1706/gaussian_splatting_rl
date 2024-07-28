@@ -31,6 +31,7 @@ def create_training_command(cfg) -> str:
     add_params(cfg.pipeline_params)
     add_params(cfg.optimization_params)
     add_params(cfg.script_params)
+    add_params(cfg.wandb_params)
 
     return command
 
@@ -69,14 +70,18 @@ def train_and_evaluate(cfg, datasets, output_path):
         # RL Training
         if not cfg.eval_params.skip_training:
             cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, train_dataset)
-            cfg.script_params.group = "train"
+            cfg.wandb_params.name = f"RL_train_iteration_{iteration}"
+            cfg.wandb_params.group = "training"
+            cfg.wandb_params.tags = ["training", f"iteration_{iteration}"]
             training_command = create_training_command(cfg)
             run_command(training_command, env=os.environ.copy())
 
         # Optimization with RL model without learning
         if not cfg.eval_params.skip_eval:
             cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, eval_dataset)
-            cfg.script_params.group = "eval"
+            cfg.wandb_params.name = f"RL_eval_iteration_{iteration}"
+            cfg.wandb_params.group = "evaluation"
+            cfg.wandb_params.tags = ["evaluation", f"iteration_{iteration}", f"reward_{cfg.rl_params.reward_function}"]
             training_command = create_training_command(cfg)
             run_command(training_command, env=os.environ.copy())
 

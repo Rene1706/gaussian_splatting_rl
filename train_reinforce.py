@@ -22,7 +22,7 @@ import torch
 from tqdm import tqdm
 import csv
 # Rene: Added for configs as not yet using new configs
-from arguments import ModelParams, PipelineParams, OptimizationParams
+from arguments import ModelParams, PipelineParams, OptimizationParams, WandbParams, RLParams
 
 from hydra import initialize, compose
 from omegaconf import DictConfig, OmegaConf
@@ -36,7 +36,7 @@ from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
 import seaborn as sns
 import wandb
-from loggers import WandBLogger, WandBInitConfig
+from loggers import WandBLogger
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -108,14 +108,13 @@ def training(
         dataset,
         opt,
         pipe,
+        rlp,
         testing_iterations,
         saving_iterations,
         checkpoint_iterations,
         checkpoint,
         debug_from,
-        run_name="",
-        meta_model="",
-        train_type=""
+        run_name=""
 ):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -142,18 +141,16 @@ def training(
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
 
-    if train_type == "train":
-        k = 2
-    elif train_type == "eval":
-        k = 1
+    # Only use one candidate for evaluation optimization run
+    k = rlp.num_candidates if rlp.train_rl else 1
     action_selector = ParamBasedActionSelector(k=k).to("cuda")
     
     # RENE: Commented out so model is not loaded
-    if meta_model and Path(meta_model).exists():
-        print(f"Loading meta_model from {meta_model}")
-        action_selector.load_state_dict(torch.load(meta_model))
+    if rlp.meta_model and Path(rlp.meta_model).exists():
+        print(f"Loading meta_model from {rlp.meta_model}")
+        action_selector.load_state_dict(torch.load(rlp.meta_model))
 
-    policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=0.001)
+    policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
     candidates_created = 0  # Counter when the last candidates were created
     for iteration in range(first_iter, opt.iterations + 1):
         if iteration - candidates_created > opt.densification_interval * 5:
@@ -247,7 +244,7 @@ def training(
                     if log_probability_candidates is not None:
                         # Update meta policy
                         # Rene: Make this true variable a parameter to controll if meta model should be learned or just used.
-                        if train_type=="train":
+                        if rlp.train_rl:
                             with torch.enable_grad():
                                 policy_optimizer.zero_grad(set_to_none=True)
                                 rewards = torch.stack(gaussian_selection_rewards).squeeze()
@@ -315,9 +312,9 @@ def training(
                 )
 
     # Saving Meta Model
-    if meta_model:
-        print(f"Saving meta model to {meta_model}")
-        torch.save(action_selector.state_dict(), meta_model)
+    if rlp.meta_model and rlp.train_rl:
+        print(f"Saving meta model to {rlp.meta_model}")
+        torch.save(action_selector.state_dict(), rlp.meta_model)
 
 
 def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, max_screen_size, extent):
@@ -400,6 +397,8 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
+    wdbp = WandbParams(parser)
+    rlp = RLParams(parser)
     parser.add_argument("--ip", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=6009)
     parser.add_argument("--debug_from", type=int, default=-1)
@@ -413,9 +412,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)
-    parser.add_argument("--meta_model", type=str, default="meta_model.torch")
     parser.add_argument("--run_name", type=str, default="")
-    parser.add_argument("--group", type=str, default="train")
 
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
@@ -431,20 +428,19 @@ if __name__ == "__main__":
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     # Example usage
-    wandb_config = WandBInitConfig(project='my_project', name='experiment_name', group=args.group, mode='offline')
+    wandb_config = wdbp.extract(args)
     wandb_logger = WandBLogger(wandb_config)
     training(
         lp.extract(args),
         op.extract(args),
         pp.extract(args),
+        rlp.extract(args),
         args.test_iterations,
         args.save_iterations,
         args.checkpoint_iterations,
         args.start_checkpoint,
         args.debug_from,
-        args.run_name,
-        meta_model=args.meta_model,
-        train_type=args.group
+        args.run_name
     )
 
     # All done
