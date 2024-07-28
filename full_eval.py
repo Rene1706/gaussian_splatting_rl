@@ -120,7 +120,7 @@ def train_and_evaluate(cfg, datasets, output_path):
                 #    wandb.log(metrics)
                 #wandb.finish()
 
-"""if __name__ == "__main__":
+if __name__ == "__main__":
     config_name = "config"  # Change this to your desired config name
     # Initialize Hydra and compose the configuration
     with initialize(config_path="conf"):
@@ -128,8 +128,8 @@ def train_and_evaluate(cfg, datasets, output_path):
     
     datasets = get_datasets(cfg.eval_params.data_path)
     print(datasets)
-    train_and_evaluate(cfg, datasets, "")"""
-
+    train_and_evaluate(cfg, datasets, "")
+"""
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):
     data_path = to_absolute_path(cfg.eval_params.data_path)
@@ -139,4 +139,5 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     main()
+"""
 
