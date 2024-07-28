@@ -77,7 +77,7 @@ def train_and_evaluate(cfg, datasets, output_path):
         # Sample random datasets for training and evaluation
         train_dataset = random.choice(datasets)
         eval_dataset = random.choice(datasets)
-
+        print(f"Training on dataset {train_dataset}, evaluating on dataset {eval_dataset}")
         # RL Training
         if not cfg.eval_params.skip_training:
             cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, train_dataset)
@@ -132,8 +132,9 @@ def train_and_evaluate(cfg, datasets, output_path):
 
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):
-    datasets = get_datasets(cfg.eval_params.data_path)
-    print(datasets)
+    data_path = to_absolute_path(cfg.eval_params.data_path)
+    datasets = get_datasets(data_path)
+    print("Datasets found: ", datasets)
     train_and_evaluate(cfg, datasets, "")
 
 if __name__ == "__main__":
