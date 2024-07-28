@@ -32,6 +32,7 @@ def create_training_command(cfg) -> str:
     add_params(cfg.optimization_params)
     add_params(cfg.script_params)
     add_params(cfg.wandb_params)
+    add_params(cfg.rl_params)
 
     return command
 
