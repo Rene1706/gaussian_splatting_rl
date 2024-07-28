@@ -1,8 +1,10 @@
 import os
 from argparse import ArgumentParser
 import sys
+import hydra
 from hydra import initialize, compose
-from omegaconf import OmegaConf, ListConfig
+from omegaconf import OmegaConf, ListConfig, DictConfig
+from hydra.utils import instantiate, to_absolute_path
 import subprocess
 import random
 import wandb
@@ -118,7 +120,7 @@ def train_and_evaluate(cfg, datasets, output_path):
                 #    wandb.log(metrics)
                 #wandb.finish()
 
-if __name__ == "__main__":
+"""if __name__ == "__main__":
     config_name = "config"  # Change this to your desired config name
     # Initialize Hydra and compose the configuration
     with initialize(config_path="conf"):
@@ -126,5 +128,14 @@ if __name__ == "__main__":
     
     datasets = get_datasets(cfg.eval_params.data_path)
     print(datasets)
+    train_and_evaluate(cfg, datasets, "")"""
+
+@hydra.main(config_path="conf", config_name="config")
+def main(cfg: DictConfig):
+    datasets = get_datasets(cfg.eval_params.data_path)
+    print(datasets)
     train_and_evaluate(cfg, datasets, "")
+
+if __name__ == "__main__":
+    main()
 
