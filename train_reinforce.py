@@ -110,12 +110,14 @@ def training(
         opt,
         pipe,
         rlp,
+        wandb_config,
         testing_iterations,
         saving_iterations,
         checkpoint_iterations,
         checkpoint,
         debug_from,
-        run_name=""
+        run_name="",
+        eval_output_path=None
 ):
     first_iter = 0
     # Get reward function to be used
@@ -128,7 +130,7 @@ def training(
     # Get the reward function from the module
     reward_function = getattr(rewards_module, reward_function_name)
 
-    tb_writer = prepare_output_and_logger(dataset)
+    tb_writer = prepare_output_and_logger(dataset, wandb_config, eval_output_path)
     init_gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, init_gaussians)
 
@@ -377,14 +379,18 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     return n_cloned_points.item(), n_splitted_points.item(), n_pruned_points.item(), gaussians.num_points, n_noop_points.item()
 
 
-def prepare_output_and_logger(args):
-    if not args.model_path:
-        if os.getenv("OAR_JOB_ID"):
-            unique_str = os.getenv("OAR_JOB_ID")
-        else:
-            unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            # unique_str = str(uuid.uuid4())[0:10]
-        args.model_path = os.path.join("./output/", unique_str)
+def prepare_output_and_logger(args, wandb_config, eval_output_path=None):
+    if eval_output_path:
+        unique_str = wandb_config.name
+        args.model_path = os.path.join(eval_output_path, unique_str)
+    else:
+        if not args.model_path:
+            if os.getenv("OAR_JOB_ID"):
+                unique_str = os.getenv("OAR_JOB_ID")
+            else:
+                unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                # unique_str = str(uuid.uuid4())[0:10]
+            args.model_path = os.path.join("./output/", unique_str)
 
     # Set up output folder
     print(f"Output folder: {args.model_path}")
@@ -423,6 +429,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)
     parser.add_argument("--run_name", type=str, default="")
+    parser.add_argument("--eval_output_path", type=str, default=None)
 
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
@@ -445,12 +452,14 @@ if __name__ == "__main__":
         op.extract(args),
         pp.extract(args),
         rlp.extract(args),
+        wandb_config,
         args.test_iterations,
         args.save_iterations,
         args.checkpoint_iterations,
         args.start_checkpoint,
         args.debug_from,
-        args.run_name
+        args.run_name,
+        args.eval_output_path
     )
 
     # All done

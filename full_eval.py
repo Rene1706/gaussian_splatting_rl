@@ -7,6 +7,7 @@ import subprocess
 import random
 import wandb
 import json
+import datetime
 
 def create_training_command(cfg) -> str:
     # Create the base command
@@ -63,7 +64,13 @@ def run_command(command, env=None):
 def train_and_evaluate(cfg, datasets, output_path):
     for iteration in range(cfg.eval_params.iterations):
         print(f"Running iteration {iteration + 1}/{cfg.eval_params.iterations}")
-        
+
+        # Create log directory for this full evaluation run
+        unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        full_eval_output_path = os.path.join("./output/", f"full_eval_{unique_str}")
+        os.makedirs(full_eval_output_path, exist_ok=True)
+        cfg.script_params.eval_output_path= full_eval_output_path
+
         # Sample random datasets for training and evaluation
         train_dataset = random.choice(datasets)
         eval_dataset = random.choice(datasets)
