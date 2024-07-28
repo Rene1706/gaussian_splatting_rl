@@ -14,7 +14,7 @@ from arguments import WandbParams
 class WandBLogger:
     def __init__(self, config: WandbParams):
         filtered_config = {k: v for k, v in config.asdict().items() if v not in (None, '')}
-        print(filtered_config)
+        #print(filtered_config)
         wandb.init(**filtered_config)
         self.config = config
         self.image_interval = 200

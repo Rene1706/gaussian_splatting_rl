@@ -102,9 +102,9 @@ class RLParams(ParamGroup):
     def __init__(self, parser):
         self.rl_lr = 0.005
         self.meta_model = "meta_model.torch"
-        self.train_rl = True
+        self.train_rl = False
         self.num_candidates = 2
-        self.reward_function = ""
+        self.reward_function = "reward_default"
 
         super().__init__(parser, "RL Parameters")
 

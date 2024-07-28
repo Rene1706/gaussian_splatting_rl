@@ -81,6 +81,6 @@ rl_params:
   meta_model: "meta_model.torch"
   train_rl: true
   num_candidates: 2
-  reward_function: ""
+  reward_function: "reward_function_5"
 
 training_script: "python train_reinforce.py"

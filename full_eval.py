@@ -73,7 +73,9 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, train_dataset)
             cfg.wandb_params.name = f"RL_train_iteration_{iteration}"
             cfg.wandb_params.group = "training"
-            cfg.wandb_params.tags = ["training", f"iteration_{iteration}"]
+            cfg.wandb_params.tags = ["training", f"iteration_{iteration}", f"reward_{cfg.rl_params.reward_function}"]
+            # Optimizing the RL model
+            cfg.rl_params.train_rl = True
             training_command = create_training_command(cfg)
             run_command(training_command, env=os.environ.copy())
 
@@ -83,6 +85,8 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.wandb_params.name = f"RL_eval_iteration_{iteration}"
             cfg.wandb_params.group = "evaluation"
             cfg.wandb_params.tags = ["evaluation", f"iteration_{iteration}", f"reward_{cfg.rl_params.reward_function}"]
+            # Skip optimizing the RL model
+            cfg.rl_params.train_rl = False
             training_command = create_training_command(cfg)
             run_command(training_command, env=os.environ.copy())
 

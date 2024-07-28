@@ -37,6 +37,7 @@ from utils.loss_utils import l1_loss, ssim
 import seaborn as sns
 import wandb
 from loggers import WandBLogger
+import importlib
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -117,6 +118,16 @@ def training(
         run_name=""
 ):
     first_iter = 0
+    # Get reward function to be used
+    reward_function_name = rlp.reward_function
+    print("Reward function used: ", reward_function_name)
+
+    # Import the rewards module
+    rewards_module = importlib.import_module("rewards.rewards")
+
+    # Get the reward function from the module
+    reward_function = getattr(rewards_module, reward_function_name)
+
     tb_writer = prepare_output_and_logger(dataset)
     init_gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, init_gaussians)
@@ -210,8 +221,7 @@ def training(
             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
             # TODO: Calculate better reward for gaussian selection
-            penalty_factor = 0.1
-            reward = -loss.detach() - penalty_factor * gaussians.num_points#/ gaussians.num_points#math.log(gaussians.num_points)
+            reward = reward_function(loss, gaussians)
             gaussian_selection_rewards[i] = reward
 
             #TODO Rene implement wandblogger
@@ -344,13 +354,6 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     )
     n_pruned_points = torch.sum(prune_mask)
     n_noop_points = torch.sum(noop_mask)
-    n_gaussians = gaussians.num_points
-
-    print(f"Cloned: {n_cloned_points}",
-          f"Splitted: {n_splitted_points}",
-          f"Pruned: {n_pruned_points}",
-          f"NOOP: {torch.sum(noop_mask)}",
-          f"NUMP: {n_gaussians}")
 
     # Clone and split
     gaussians.densify_and_clone_selected(clone_mask)
@@ -363,6 +366,13 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     #with open("densifcation.csv", mode='a', newline='') as log_file:
     #    writer = csv.writer(log_file)
     #    writer.writerow([0, n_cloned_points, n_splitted_points, torch.sum(prune_mask), gaussians.num_points])
+    n_gaussians = gaussians.num_points
+    print(f"Cloned: {n_cloned_points}",
+          f"Splitted: {n_splitted_points}",
+          f"Pruned: {n_pruned_points}",
+          f"NOOP: {torch.sum(noop_mask)}",
+          f"NUMP: {n_gaussians}")
+    
     torch.cuda.empty_cache()
     return n_cloned_points.item(), n_splitted_points.item(), n_pruned_points.item(), gaussians.num_points, n_noop_points.item()
 
