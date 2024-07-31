@@ -51,6 +51,12 @@ class WandBLogger:
             f'densification_step/candidate_{candidate_index}/% n_noop': (n_noop/n_gaussians)*100
         }, step=iteration)
 
+    def log_point_cloud(xyzrgb, iteration=0):
+        wandb.log(
+            {"initial_point_cloud": wandb.Object3D(xyzrgb)},
+            step=iteration
+        )
+
     def log_evaluation(self, iteration, gaussians: GaussianModel, scene: Scene, renderFunc, renderArgs: tuple):
         torch.cuda.empty_cache()
         validation_configs = [

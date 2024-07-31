@@ -134,6 +134,8 @@ def training(
     init_gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, init_gaussians)
 
+    wandb_logger.log_point_cloud(init_gaussians.initial_pcd.xyzrgb)
+
     init_gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)

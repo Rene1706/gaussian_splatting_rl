@@ -19,6 +19,10 @@ class BasicPointCloud(NamedTuple):
     colors : np.array
     normals : np.array
 
+    @property
+    def xyzrgb(self) -> np.ndarray:
+        return np.append(self.points, self.colors, axis=1)
+
 def geom_transform_points(points, transf_matrix):
     P, _ = points.shape
     ones = torch.ones(P, 1, dtype=points.dtype, device=points.device)

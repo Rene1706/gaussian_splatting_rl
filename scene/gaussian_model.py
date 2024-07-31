@@ -56,6 +56,7 @@ class GaussianModel:
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
+        self.initial_pcd = None
         self.setup_functions()
 
     @property
@@ -149,6 +150,8 @@ class GaussianModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
+        self.initial_pcd = pcd
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
