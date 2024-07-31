@@ -42,7 +42,7 @@ eval_params:
   skip_eval: false
   output_path: "./eval"
   data_path: "data/MAD-Sim_3dgs"
-  iterations: 2
+  epochs: 2
   
   
 script_params:
