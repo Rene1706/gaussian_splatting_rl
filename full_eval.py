@@ -10,6 +10,7 @@ import random
 import wandb
 import json
 import datetime
+import pprint
 
 def create_training_command(cfg) -> str:
     # Create the base command
@@ -127,7 +128,7 @@ if __name__ == "__main__":
         cfg = compose(config_name=config_name)
     
     datasets = get_datasets(cfg.eval_params.data_path)
-    print(datasets)
+    pprint.pprint(datasets)
     train_and_evaluate(cfg, datasets, "")
 """
 @hydra.main(config_path="conf", config_name="config")

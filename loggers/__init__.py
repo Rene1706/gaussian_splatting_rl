@@ -45,6 +45,10 @@ class WandBLogger:
             f'densification_step/candidate_{candidate_index}/n_pruned': n_pruned,
             f'densification_step/candidate_{candidate_index}/n_gaussians': n_gaussians,
             f'densification_step/candidate_{candidate_index}/n_noop': n_noop,
+            f'densification_step/candidate_{candidate_index}/% n_cloned': (n_cloned/n_gaussians)*100,
+            f'densification_step/candidate_{candidate_index}/% n_splitted': (n_splitted/n_gaussians)*100,
+            f'densification_step/candidate_{candidate_index}/% n_pruned': (n_pruned/n_gaussians)*100,
+            f'densification_step/candidate_{candidate_index}/% n_noop': (n_noop/n_gaussians)*100
         }, step=iteration)
 
     def log_evaluation(self, iteration, gaussians: GaussianModel, scene: Scene, renderFunc, renderArgs: tuple):
