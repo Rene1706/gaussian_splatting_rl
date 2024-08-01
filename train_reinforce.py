@@ -20,12 +20,9 @@ import matplotlib.pyplot as plt
 import torch
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm
-import csv
-# Rene: Added for configs as not yet using new configs
+
 from arguments import ModelParams, PipelineParams, OptimizationParams, WandbParams, RLParams
 
-from hydra import initialize, compose
-from omegaconf import DictConfig, OmegaConf
 
 from gaussian_renderer import network_gui, render
 from scene import Scene, GaussianModel
@@ -36,7 +33,6 @@ from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
 from utils.image_utils import psnr
 import seaborn as sns
-import wandb
 from loggers import WandBLogger
 import importlib
 
@@ -172,7 +168,7 @@ def training(
         policy_optimizer.load_state_dict(torch.load(rlp.optimizer))
 
     if rlp.lr_scheduler and Path(rlp.lr_scheduler).exists():
-        print(f"Loading scheduler from {rlp.scheduler}")
+        print(f"Loading scheduler from {rlp.lr_scheduler}")
         lr_scheduler.load_state_dict(torch.load(rlp.lr_scheduler))
 
     
