@@ -115,45 +115,6 @@ class GradNormThresholdSelector(ActionSelector):
         return op_mask.detach(), threshold_logprobs.squeeze()
 
 
-class FullInfoActionSelector(ActionSelector):
-    def __init__(self, input_dim=3, hidden_dim=128):
-        super().__init__(k=4)
-        self.parameter_network = ParameterNetwork(input_dim, hidden_dim)
-
-    def forward(self, gaussians, *, iteration, scene_extent):
-        print(gaussians.xyz_gradient_accum.device)
-        device = "cuda"
-
-        self.parameter_network.to(device)        
-
-        grads = (gaussians.xyz_gradient_accum / gaussians.denom).to(device)
-        grads[grads.isnan()] = 0.0
-        grad_norms = torch.norm(grads, dim=-1, p=2).to(device)
-        max_scalings = torch.max(gaussians.get_scaling, dim=1).values.to(device)
-        opacities = gaussians.get_opacity.squeeze(-1).to(device)
-
-        # Concatenate all Gaussian features to form the input for the parameter network
-        features = torch.cat((grad_norms.unsqueeze(-1), max_scalings.unsqueeze(-1), opacities.unsqueeze(-1)), dim=-1).to(device)
-
-        # Pass the features through the parameter network to get action logits
-        action_logits = self.parameter_network(features)
-
-        # Sample actions based on the logits
-        action_probs = F.softmax(action_logits, dim=-1)
-        actions = torch.multinomial(action_probs, 1).squeeze(-1)
-
-        actions = actions.to(device)
-
-        # Masks for actions
-        split_mask = (actions == 0).int().to(device)
-        clone_mask = (actions == 1).int().to(device)
-        prune_mask = (actions == 2).int().to(device)
-        noop_mask = (actions == 3).int().to(device)
-
-        op_mask = split_mask + (clone_mask << 1) + (prune_mask << 2) + (noop_mask << 3)
-
-        return op_mask.detach(), action_probs
-
 class ParamNetwork(nn.Module):
     def __init__(self, input_size, hidden_size=128, output_size=4):
         super(ParamNetwork, self).__init__()
@@ -190,7 +151,7 @@ class ParamBasedActionSelector(ActionSelector):
         opacities = gaussians.get_opacity.squeeze(-1)
         
         # Normalize the inputs
-        grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
+        #grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
         max_scalings = (max_scalings - max_scalings.mean()) / (max_scalings.std() + 1e-8)
         opacities = (opacities - opacities.mean()) / (opacities.std() + 1e-8)
 
@@ -213,11 +174,4 @@ class ParamBasedActionSelector(ActionSelector):
         actions = action_dist.sample((self.k,)).to("cuda")   # using sample for discrete actions
         log_probs = action_dist.log_prob(actions)
 
-        # Count actions
-        num_split = torch.sum(actions == 1).item()
-        num_clone = torch.sum(actions == 2).item()
-        num_prune = torch.sum(actions == 3).item()
-        num_noop = torch.sum(actions == 0).item()
-
-        #print(f"Split: {num_split}, Clone: {num_clone}, Prune: {num_prune}, No-op: {num_noop}")
         return actions, log_probs.squeeze()

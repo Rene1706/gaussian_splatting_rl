@@ -1,9 +1,0 @@
-defaults:
-  - _self_
-
-evaluation:
-  skip_training: false
-  skip_rendering: false
-  skip_metrics: false
-  output_path: ./eval
-  data_path: /bigwork/nhmlhuer/gaussian-splatting-rl/data/MAD-Sim_3dgs
