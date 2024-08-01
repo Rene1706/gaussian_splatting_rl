@@ -289,25 +289,6 @@ def training(
                             iteration=iteration,
                             scene_extent=scene.cameras_extent
                         )
-                    
-                    # Check the number of gaussians and stop if necessary
-                    if gaussians.num_points > 300000 or gaussians.num_points < 200:
-                        print(f"\nNumber of gaussians {gaussians.num_points} is outside the range. Optimizing action selector and stopping.")
-                        if rlp.train_rl:
-                            with torch.enable_grad():
-                                policy_optimizer.zero_grad(set_to_none=True)
-                                # Creating negativ reward for RL agent
-                                # Get the shape of log_probability_candidates
-                                num_can = log_probability_candidates.shape[0]
-                                # WAS WORKING WITH TRAINNG but not eval rewards = torch.tensor([-1.0, -1.0], dtype=torch.float32, device="cuda")  # torch.Size([2])
-                                rewards = torch.tensor([-1.0] * num_can, dtype=torch.float32, device="cuda")  # Shape [num_candidates]
-                                advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
-                                expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates)
-
-                                loss = -torch.mean(log_probability_candidates * expanded_advantage)
-                                loss.backward()
-                                policy_optimizer.step()
-                        break
 
                     gaussian_candidate_list.clear()
                     gaussian_selection_rewards.clear()
@@ -348,6 +329,28 @@ def training(
                     (gaussians.capture(), iteration),
                     Path(scene.model_path) / f"chkpnt{iteration}.pth",
                 )
+            # Check the number of gaussians and stop if necessary
+            if gaussians.num_points > 300000 or gaussians.num_points < 200:
+                print(f"\nNumber of gaussians {gaussians.num_points} is outside the range. Optimizing action selector and stopping.")
+                if rlp.train_rl:
+                    with torch.enable_grad():
+                        policy_optimizer.zero_grad(set_to_none=True)
+                        # Creating negativ reward for RL agent
+                        # Get the shape of log_probability_candidates
+                        num_can = log_probability_candidates.shape[0]
+                        # WAS WORKING WITH TRAINNG but not eval rewards = torch.tensor([-1.0, -1.0], dtype=torch.float32, device="cuda")  # torch.Size([2])
+                        rewards = torch.tensor([-1.0] * num_can, dtype=torch.float32, device="cuda")  # Shape [num_candidates]
+                        advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+                        expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates)
+                        loss = -torch.mean(log_probability_candidates * expanded_advantage)
+                        loss.backward()
+                        policy_optimizer.step()
+                    
+                    # Saving Meta Model as run will be stopped
+                    if rlp.meta_model and rlp.train_rl:
+                        print(f"Saving meta model to {rlp.meta_model}")
+                        torch.save(action_selector.state_dict(), rlp.meta_model)
+                    break
 
     # Saving Meta Model
     if rlp.meta_model and rlp.train_rl:
