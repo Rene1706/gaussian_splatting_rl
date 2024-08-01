@@ -11,10 +11,14 @@ import wandb
 import json
 import datetime
 import pprint
+from pathlib import Path
+
+# Get the current script directory
+script_dir = Path(__file__).parent
 
 def create_training_command(cfg) -> str:
     # Create the base command
-    command = cfg.training_script
+    command = f"python {script_dir}/{cfg.training_script}"
 
     # Function to add parameters to the command
     def add_params(params, prefix=""):
@@ -49,19 +53,30 @@ def run_command(command, env=None):
     print(f"Executing: {command}")
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
 
-    # Read the output in real-time
+    stdout_lines = []
+    stderr_lines = []
+
     while True:
-        output = process.stdout.readline()
-        if output == '' and process.poll() is not None:
+        stdout_output = process.stdout.readline()
+        stderr_output = process.stderr.readline()
+
+        if stdout_output == '' and stderr_output == '' and process.poll() is not None:
             break
-        if output:
-            print(output.strip())
-    
+
+        if stdout_output:
+            print(stdout_output.strip())
+            stdout_lines.append(stdout_output.strip())
+
+        if stderr_output:
+            print(stderr_output.strip(), file=sys.stderr)
+            stderr_lines.append(stderr_output.strip())
+
     # Check for errors
-    stderr_output, _ = process.communicate()
+    process.wait()
     if process.returncode != 0:
         print("Error output:")
-        print(stderr_output)
+        for line in stderr_lines:
+            print(line, file=sys.stderr)
         raise RuntimeError(f"Command failed with return code {process.returncode}: {command}")
 
 def train_and_evaluate(cfg, datasets, output_path):
@@ -69,8 +84,12 @@ def train_and_evaluate(cfg, datasets, output_path):
     unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     full_eval_output_path = os.path.join("./output/", f"full_eval_{unique_str}")
     os.makedirs(full_eval_output_path, exist_ok=True)
+    # Convert the relative path to an absolute path
+    full_eval_output_path = os.path.abspath(full_eval_output_path)
     cfg.script_params.eval_output_path= full_eval_output_path
     print("Created output directory:", full_eval_output_path)
+
+    full_data_path = os.path.abspath(full_eval_output_path)
 
     for epoch in range(cfg.eval_params.epochs):
         print(f"Running epoch {epoch + 1}/{cfg.eval_params.epochs}")
@@ -80,7 +99,7 @@ def train_and_evaluate(cfg, datasets, output_path):
         print(f"Training on dataset {train_dataset}, evaluating on dataset {eval_dataset}")
         # RL Training
         if not cfg.eval_params.skip_training:
-            cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, train_dataset)
+            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, train_dataset)
             cfg.wandb_params.name = f"RL_train_epoch_{epoch}_{unique_str}"
             cfg.wandb_params.group = "training"
             cfg.wandb_params.tags = ["training", f"epoch_{epoch}", f"reward_{cfg.rl_params.reward_function}"]
@@ -91,7 +110,7 @@ def train_and_evaluate(cfg, datasets, output_path):
 
         # Optimization with RL model without learning
         if not cfg.eval_params.skip_eval:
-            cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, eval_dataset)
+            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, eval_dataset)
             cfg.wandb_params.name = f"RL_eval_epoch_{epoch}_{unique_str}"
             cfg.wandb_params.group = "evaluation"
             cfg.wandb_params.tags = ["evaluation", f"epoch_{epoch}", f"reward_{cfg.rl_params.reward_function}"]
@@ -120,24 +139,15 @@ def train_and_evaluate(cfg, datasets, output_path):
                 #    wandb.log(metrics)
                 #wandb.finish()
 
-if __name__ == "__main__":
-    config_name = "config"  # Change this to your desired config name
-    # Initialize Hydra and compose the configuration
-    with initialize(config_path="conf"):
-        cfg = compose(config_name=config_name)
-    
-    datasets = get_datasets(cfg.eval_params.data_path)
-    pprint.pprint(datasets)
-    train_and_evaluate(cfg, datasets, "")
-"""
+
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):
     data_path = to_absolute_path(cfg.eval_params.data_path)
     datasets = get_datasets(data_path)
-    print("Datasets found: ", datasets)
+    pprint.pprint(datasets)
     train_and_evaluate(cfg, datasets, "")
 
 if __name__ == "__main__":
     main()
-"""
+
 
