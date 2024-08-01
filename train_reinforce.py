@@ -36,6 +36,7 @@ from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
 from utils.image_utils import psnr
 import seaborn as sns
+import wandb
 from loggers import WandBLogger
 import importlib
 
@@ -266,13 +267,18 @@ def training(
             if iteration < opt.densify_until_iter:
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     if log_probability_candidates is not None:
+                        # Check if there are too many/less gaussians to kill the training before error 
+                        break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 200 for gaussian in gaussian_candidate_list)
                         # Update meta policy
-                        # Rene: Make this true variable a parameter to controll if meta model should be learned or just used.
                         if rlp.train_rl:
                             with torch.enable_grad():
                                 policy_optimizer.zero_grad(set_to_none=True)
-                                
-                                rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]                                
+                                if break_training:
+                                    # Create negativ reward if the training would error soon
+                                    num_can = log_probability_candidates.shape[0]
+                                    rewards = torch.tensor([-1.0] * num_can, dtype=torch.float32, device="cuda")  # [Kandidaten]  
+                                else:
+                                    rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]                                
                                 advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8) #[Kandidaten]                                
                                 expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates) # [Kandidaten, Number Gaussians]   
                                 # Maybe add entropy loss for exploration
@@ -280,6 +286,13 @@ def training(
                                 loss = -torch.mean(log_probability_candidates * expanded_advantage)
                                 loss.backward()
                                 policy_optimizer.step()
+                                lr_scheduler.step()
+                        if break_training:
+                            print(f"\nNumber of gaussians is outside the range. Optimizing action selector and stopping.")
+                            # Saving Meta Model as run will be stopped
+                            if rlp.meta_model and rlp.train_rl:
+                                save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
+                            break
 
                     # Select best gaussian
                     gaussians_best_idx = torch.stack(gaussian_selection_rewards).argmax()
@@ -337,27 +350,6 @@ def training(
                     (gaussians.capture(), iteration),
                     Path(scene.model_path) / f"chkpnt{iteration}.pth",
                 )
-            # Check the number of gaussians and stop if necessary
-            if gaussians.num_points > 300000 or gaussians.num_points < 200:
-                print(f"\nNumber of gaussians {gaussians.num_points} is outside the range. Optimizing action selector and stopping.")
-                if rlp.train_rl:
-                    with torch.enable_grad():
-                        policy_optimizer.zero_grad(set_to_none=True)
-                        # Creating negativ reward for RL agent
-                        # Get the shape of log_probability_candidates
-                        num_can = log_probability_candidates.shape[0]
-                        # WAS WORKING WITH TRAINNG but not eval rewards = torch.tensor([-1.0, -1.0], dtype=torch.float32, device="cuda")  # torch.Size([2])
-                        rewards = torch.tensor([-1.0] * num_can, dtype=torch.float32, device="cuda")  # Shape [num_candidates]
-                        advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
-                        expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates)
-                        loss = -torch.mean(log_probability_candidates * expanded_advantage)
-                        loss.backward()
-                        policy_optimizer.step()
-                    
-                    # Saving Meta Model as run will be stopped
-                    if rlp.meta_model and rlp.train_rl:
-                        save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
-                    break
 
     # Saving Meta Model
     if rlp.meta_model and rlp.train_rl:
@@ -374,7 +366,7 @@ def save_model_optimizer_scheduler(model_path, optimizer_path, scheduler_path, m
     torch.save(scheduler.state_dict(), scheduler_path)
 
 # Unused function to be used to update the action selector
-def rl_update(policy_optimizer, log_probability_candidates, gaussian_selection_rewards):
+def rl_update(policy_optimizer, lr_scheduler, log_probability_candidates, gaussian_selection_rewards):
     with torch.enable_grad():
         policy_optimizer.zero_grad(set_to_none=True)
         
@@ -388,6 +380,7 @@ def rl_update(policy_optimizer, log_probability_candidates, gaussian_selection_r
         
         loss.backward()
         policy_optimizer.step()
+        lr_scheduler.step()
 
 def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, max_screen_size, extent):
     noop_mask = actions == 0
