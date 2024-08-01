@@ -8,7 +8,6 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
-import math
 import os
 import sys
 import datetime
@@ -19,6 +18,7 @@ from random import randint
 
 import matplotlib.pyplot as plt
 import torch
+from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm
 import csv
 # Rene: Added for configs as not yet using new configs
@@ -29,14 +29,13 @@ from omegaconf import DictConfig, OmegaConf
 
 from gaussian_renderer import network_gui, render
 from scene import Scene, GaussianModel
-from policies.action_selector import ParamBasedActionSelector, OldActionSelector, GradNormThresholdSelector, FullInfoActionSelector
+from policies.action_selector import ParamBasedActionSelector
 from scene import Scene
 from utils.general_utils import safe_state
 from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
 from utils.image_utils import psnr
 import seaborn as sns
-import wandb
 from loggers import WandBLogger
 import importlib
 
@@ -160,13 +159,22 @@ def training(
     # Only use one candidate for evaluation optimization run
     k = rlp.num_candidates if rlp.train_rl else 1
     action_selector = ParamBasedActionSelector(k=k).to("cuda")
-    
-    # RENE: Commented out so model is not loaded
+    policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
+    lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
+    # Load RL meta model and optimizer
     if rlp.meta_model and Path(rlp.meta_model).exists():
         print(f"Loading meta_model from {rlp.meta_model}")
         action_selector.load_state_dict(torch.load(rlp.meta_model))
 
-    policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
+    if rlp.optimizer and Path(rlp.optimizer).exists():
+        print(f"Loading optimizer from {rlp.optimizer}")
+        policy_optimizer.load_state_dict(torch.load(rlp.optimizer))
+
+    if rlp.lr_scheduler and Path(rlp.lr_scheduler).exists():
+        print(f"Loading scheduler from {rlp.scheduler}")
+        lr_scheduler.load_state_dict(torch.load(rlp.lr_scheduler))
+
+    
     candidates_created = 0  # Counter when the last candidates were created
     for iteration in range(first_iter, opt.iterations + 1):
         if iteration - candidates_created > opt.densification_interval * 5:
@@ -348,15 +356,38 @@ def training(
                     
                     # Saving Meta Model as run will be stopped
                     if rlp.meta_model and rlp.train_rl:
-                        print(f"Saving meta model to {rlp.meta_model}")
-                        torch.save(action_selector.state_dict(), rlp.meta_model)
+                        save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
                     break
 
     # Saving Meta Model
     if rlp.meta_model and rlp.train_rl:
-        print(f"Saving meta model to {rlp.meta_model}")
-        torch.save(action_selector.state_dict(), rlp.meta_model)
+        save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
 
+
+# Function to save model and optimizer states
+def save_model_optimizer_scheduler(model_path, optimizer_path, scheduler_path, model, optimizer, scheduler):
+    print(f"Saving meta model to {model_path}")
+    torch.save(model.state_dict(), model_path)
+    print(f"Saving optimizer state to {optimizer_path}")
+    torch.save(optimizer.state_dict(), optimizer_path)
+    print(f"Saving scheduler state to {scheduler_path}")
+    torch.save(scheduler.state_dict(), scheduler_path)
+
+# Unused function to be used to update the action selector
+def rl_update(policy_optimizer, log_probability_candidates, gaussian_selection_rewards):
+    with torch.enable_grad():
+        policy_optimizer.zero_grad(set_to_none=True)
+        
+        rewards = torch.tensor(gaussian_selection_rewards, dtype=torch.float32, device="cuda") if isinstance(gaussian_selection_rewards, list) else torch.stack(gaussian_selection_rewards).squeeze()
+        advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+        expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates)
+        
+        # Optionally, add entropy loss for exploration
+        # entropy_loss = -torch.mean(torch.sum(log_probability_candidates * torch.exp(log_probability_candidates), dim=1))
+        loss = -torch.mean(log_probability_candidates * expanded_advantage)
+        
+        loss.backward()
+        policy_optimizer.step()
 
 def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, max_screen_size, extent):
     noop_mask = actions == 0

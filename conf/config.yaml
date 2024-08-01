@@ -80,6 +80,8 @@ wandb_params:
 rl_params:
   rl_lr: 0.001
   meta_model: "meta_model.torch"
+  optimizer: "rl_optimizer.torch"
+  lr_scheduler: "lr_scheduler.torch"
   train_rl: true
   num_candidates: 2
   reward_function: "reward_psnr_normalized_3"
