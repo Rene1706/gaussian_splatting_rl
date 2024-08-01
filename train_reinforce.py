@@ -34,6 +34,7 @@ from scene import Scene
 from utils.general_utils import safe_state
 from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
+from utils.image_utils import psnr
 import seaborn as sns
 import wandb
 from loggers import WandBLogger
@@ -135,7 +136,7 @@ def training(
     scene = Scene(dataset, init_gaussians)
 
     wandb_logger.log_point_cloud(init_gaussians.initial_pcd.xyzrgb)
-
+    
     init_gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -225,7 +226,8 @@ def training(
             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
             # TODO: Calculate better reward for gaussian selection
-            reward = reward_function(loss, gaussians)
+            psnr_value = psnr(image, gt_image)
+            reward = reward_function(loss, psnr_value, gaussians)
             gaussian_selection_rewards[i] = reward
 
             #TODO Rene implement wandblogger
@@ -261,10 +263,12 @@ def training(
                         if rlp.train_rl:
                             with torch.enable_grad():
                                 policy_optimizer.zero_grad(set_to_none=True)
-                                rewards = torch.stack(gaussian_selection_rewards).squeeze()
-                                advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
-                                expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates)
-
+                                
+                                rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]                                
+                                advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8) #[Kandidaten]                                
+                                expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates) # [Kandidaten, Number Gaussians]   
+                                # Maybe add entropy loss for exploration
+                                # entropy_loss = -torch.mean(torch.sum(log_probability_candidates * torch.exp(log_probability_candidates), dim=1))                             
                                 loss = -torch.mean(log_probability_candidates * expanded_advantage)
                                 loss.backward()
                                 policy_optimizer.step()
@@ -285,9 +289,29 @@ def training(
                             iteration=iteration,
                             scene_extent=scene.cameras_extent
                         )
+                    
+                    # Check the number of gaussians and stop if necessary
+                    if gaussians.num_points > 300000 or gaussians.num_points < 200:
+                        print(f"\nNumber of gaussians {gaussians.num_points} is outside the range. Optimizing action selector and stopping.")
+                        if rlp.train_rl:
+                            with torch.enable_grad():
+                                policy_optimizer.zero_grad(set_to_none=True)
+                                # Creating negativ reward for RL agent
+                                # Get the shape of log_probability_candidates
+                                num_can = log_probability_candidates.shape[0]
+                                # WAS WORKING WITH TRAINNG but not eval rewards = torch.tensor([-1.0, -1.0], dtype=torch.float32, device="cuda")  # torch.Size([2])
+                                rewards = torch.tensor([-1.0] * num_can, dtype=torch.float32, device="cuda")  # Shape [num_candidates]
+                                advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+                                expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates)
+
+                                loss = -torch.mean(log_probability_candidates * expanded_advantage)
+                                loss.backward()
+                                policy_optimizer.step()
+                        break
 
                     gaussian_candidate_list.clear()
                     gaussian_selection_rewards.clear()
+                    wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
                     for i, actions in enumerate(action_candidates):
                         gaussian_clone = deepcopy(gaussians)
                         visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
@@ -359,18 +383,21 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     n_pruned_points = torch.sum(prune_mask)
     n_noop_points = torch.sum(noop_mask)
 
+    # Number of point before densification is done for correct logging
+    n_gaussians = gaussians.num_points
+
     # Clone and split
     gaussians.densify_and_clone_selected(clone_mask)
     gaussians.densify_and_split_selected(split_mask, N=N)
 
     #print("PRUNE MASK ME: ", prune_mask.shape)
     gaussians.select_and_prune_points(prune_mask)
-    #gaussians.select_and_prune_points(min_opacity, max_screen_size, extent)
+    #gaussians.select_and_prune_points_old(min_opacity, max_screen_size, extent)
     # Open the CSV file for appending
     #with open("densifcation.csv", mode='a', newline='') as log_file:
     #    writer = csv.writer(log_file)
     #    writer.writerow([0, n_cloned_points, n_splitted_points, torch.sum(prune_mask), gaussians.num_points])
-    n_gaussians = gaussians.num_points
+    
     print(f"Cloned: {n_cloned_points}",
           f"Splitted: {n_splitted_points}",
           f"Pruned: {n_pruned_points}",
@@ -378,7 +405,7 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
           f"NUMP: {n_gaussians}")
     
     torch.cuda.empty_cache()
-    return n_cloned_points.item(), n_splitted_points.item(), n_pruned_points.item(), gaussians.num_points, n_noop_points.item()
+    return n_cloned_points, n_splitted_points, n_pruned_points, n_gaussians, n_noop_points
 
 
 def prepare_output_and_logger(args, wandb_config, eval_output_path=None):
@@ -444,7 +471,7 @@ if __name__ == "__main__":
     safe_state(silent=args.quiet)
 
     # Start GUI server, configure and run training
-    network_gui.init(args.ip, args.port)
+    # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     # Example usage
     wandb_config = wdbp.extract(args)

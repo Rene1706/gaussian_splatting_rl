@@ -17,7 +17,7 @@ pipeline_params:
   debug: false
 
 optimization_params:
-  iterations: 2000
+  iterations: 10000
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
   position_lr_delay_mult: 0.01
@@ -42,12 +42,12 @@ eval_params:
   skip_eval: false
   output_path: "./eval"
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 2
+  epochs: 10
   
   
 script_params:
-  test_iterations: [1500]
-  save_iterations: [1500]
+  test_iterations: [1500, 8000]
+  save_iterations: [1500, 8000]
   checkpoint_iterations: []
   start_checkpoint: null
   meta_model: "meta_model.torch"
@@ -78,10 +78,10 @@ wandb_params:
   save_code: true
 
 rl_params:
-  rl_lr: 0.005
+  rl_lr: 0.001
   meta_model: "meta_model.torch"
   train_rl: true
   num_candidates: 2
-  reward_function: "reward_default"
+  reward_function: "reward_psnr_normalized_3"
 
 training_script: "python train_reinforce.py"

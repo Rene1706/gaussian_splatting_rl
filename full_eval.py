@@ -65,16 +65,15 @@ def run_command(command, env=None):
         raise RuntimeError(f"Command failed with return code {process.returncode}: {command}")
 
 def train_and_evaluate(cfg, datasets, output_path):
+    # Create log directory for this full evaluation run
+    unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    full_eval_output_path = os.path.join("./output/", f"full_eval_{unique_str}")
+    os.makedirs(full_eval_output_path, exist_ok=True)
+    cfg.script_params.eval_output_path= full_eval_output_path
+    print("Created output directory:", full_eval_output_path)
+
     for epoch in range(cfg.eval_params.epochs):
         print(f"Running epoch {epoch + 1}/{cfg.eval_params.epochs}")
-
-        # Create log directory for this full evaluation run
-        unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        full_eval_output_path = os.path.join("./output/", f"full_eval_{unique_str}")
-        os.makedirs(full_eval_output_path, exist_ok=True)
-        cfg.script_params.eval_output_path= full_eval_output_path
-        print("Created output directory:", full_eval_output_path)
-
         # Sample random datasets for training and evaluation
         train_dataset = random.choice(datasets)
         eval_dataset = random.choice(datasets)
@@ -82,7 +81,7 @@ def train_and_evaluate(cfg, datasets, output_path):
         # RL Training
         if not cfg.eval_params.skip_training:
             cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, train_dataset)
-            cfg.wandb_params.name = f"RL_train_epoch_{epoch}"
+            cfg.wandb_params.name = f"RL_train_epoch_{epoch}_{unique_str}"
             cfg.wandb_params.group = "training"
             cfg.wandb_params.tags = ["training", f"epoch_{epoch}", f"reward_{cfg.rl_params.reward_function}"]
             # Optimizing the RL model
@@ -93,7 +92,7 @@ def train_and_evaluate(cfg, datasets, output_path):
         # Optimization with RL model without learning
         if not cfg.eval_params.skip_eval:
             cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, eval_dataset)
-            cfg.wandb_params.name = f"RL_eval_epoch_{epoch}"
+            cfg.wandb_params.name = f"RL_eval_epoch_{epoch}_{unique_str}"
             cfg.wandb_params.group = "evaluation"
             cfg.wandb_params.tags = ["evaluation", f"epoch_{epoch}", f"reward_{cfg.rl_params.reward_function}"]
             # Skip optimizing the RL model

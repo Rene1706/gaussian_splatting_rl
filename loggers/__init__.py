@@ -25,7 +25,7 @@ class WandBLogger:
             f'train_iter/candidate_{candidate_index}/l1_loss': Ll1.item(),
             f'train_iter/candidate_{candidate_index}/loss': loss.item(),
             f'train_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
-            f'train_iter/candidate_{candidate_index}/reward': reward.item(),
+            f'train_iter/candidate_{candidate_index}/reward': reward,
         #    f'train_iter/candidate_{candidate_index}num_points': gaussians.num_points,
         }, step=iteration)
         
@@ -51,9 +51,9 @@ class WandBLogger:
             f'densification_step/candidate_{candidate_index}/% n_noop': (n_noop/n_gaussians)*100
         }, step=iteration)
 
-    def log_point_cloud(xyzrgb, iteration=0):
+    def log_point_cloud(self, point_cloud, iteration=0):
         wandb.log(
-            {"initial_point_cloud": wandb.Object3D(xyzrgb)},
+            {"point_cloud": wandb.Object3D(point_cloud)},
             step=iteration
         )
 

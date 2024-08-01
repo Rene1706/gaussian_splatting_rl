@@ -62,6 +62,12 @@ class GaussianModel:
     @property
     def num_points(self) -> int:
         return self.get_xyz.shape[0]
+    
+    @property
+    def point_cloud(self):
+        return self.get_xyz.detach().cpu().numpy()
+        
+        
 
     def capture(self):
         return (
@@ -461,16 +467,15 @@ class GaussianModel:
         self.densify_and_split(grads, max_grad, camera_extent)
         self.select_and_prune_points(min_opacity, max_screen_size, camera_extent)
 
-    #def select_and_prune_points(self, min_opacity: float, max_screen_size: float, extent: float):
-    #    prune_mask = (self.get_opacity < min_opacity).squeeze()
-    #    if max_screen_size:
-    #        big_points_vs = self.max_radii2D > max_screen_size
-    #        big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
-    #        prune_mask |= big_points_vs | big_points_ws
-    #    print("PRUNE MASK GS: ", prune_mask.shape)
-    #    self.prune_points(prune_mask)
+    def select_and_prune_points_old(self, min_opacity: float, max_screen_size: float, extent: float):
+        prune_mask = (self.get_opacity < min_opacity).squeeze()
+        if max_screen_size:
+            big_points_vs = self.max_radii2D > max_screen_size
+            big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
+            prune_mask |= big_points_vs | big_points_ws
+        self.prune_points(prune_mask)
 
-    #    torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
     # RENE: Changing this to using prune mask kills train.py script
     def select_and_prune_points(self, prune_mask):
