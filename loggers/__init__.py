@@ -57,6 +57,15 @@ class WandBLogger:
             step=iteration
         )
 
+    def log_rl_loss(self, iteration, loss, advantage, policy_optimizer):
+        lr = policy_optimizer.param_groups[0]['lr']
+        wandb.log({
+            "rl_train_iter/learning_rate": lr,
+            "rl_train_iter/loss": loss.item(),
+        },step = iteration)
+        for i, adv in enumerate(advantage):
+            wandb.log({f"rl_train_iter/candidate_{i}/advantage": adv.item()}, step = iteration)
+
     def log_evaluation(self, iteration, gaussians: GaussianModel, scene: Scene, renderFunc, renderArgs: tuple):
         torch.cuda.empty_cache()
         validation_configs = [

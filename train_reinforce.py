@@ -283,12 +283,18 @@ def training(
                                 loss.backward()
                                 policy_optimizer.step()
                                 lr_scheduler.step()
+
+                        with torch.no_grad():
+                            wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
+
                         if break_training:
                             print(f"\nNumber of gaussians is outside the range. Optimizing action selector and stopping.")
-                            # Saving Meta Model as run will be stopped
-                            if rlp.meta_model and rlp.train_rl:
-                                save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
+                            # Saving Meta Model as run will be stopped (Not needed as with break it will get saved regardless)
+                            # if rlp.meta_model and rlp.train_rl: 
+                                #save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
                             break
+                        
+                        
 
                     # Select best gaussian
                     gaussians_best_idx = torch.stack(gaussian_selection_rewards).argmax()
