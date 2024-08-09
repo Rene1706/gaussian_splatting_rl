@@ -17,7 +17,7 @@ pipeline_params:
   debug: false
 
 optimization_params:
-  iterations: 10000
+  iterations: 1000
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
   position_lr_delay_mult: 0.01
@@ -72,19 +72,19 @@ wandb_params:
   notes: null
   anonymous: "never"
   mode: "offline"
-  resume: null
+  resume: "must"
   force: false
   sync_tensorboard: false
   save_code: true
 
 rl_params:
-  rl_lr: 0.001
+  rl_lr: 0.01
   meta_model: "meta_model.torch"
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
   num_candidates: 2
-  reward_function: "reward_psnr_normalized"
+  reward_function: ["reward_psnr_normalized", "reward_default"]
 
 hydra:
   run:

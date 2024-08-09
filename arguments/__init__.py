@@ -115,7 +115,7 @@ class WandbParams(ParamGroup):
         self.project = "my-project"
         self.entity = ""
         self.name = ""
-        self.id = None
+        self.id = ""
         self.job_type = None
         self.dir = None
         self.reinit = False
@@ -124,7 +124,7 @@ class WandbParams(ParamGroup):
         self.notes = ""
         self.anonymous = ""
         self.mode = "offline"
-        self.resume = None
+        self.resume = "never"
         self.force = False
         self.save_code = True
         self.sync_tensorboard = False

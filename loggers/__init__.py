@@ -12,22 +12,30 @@ from arguments import WandbParams
 
 
 class WandBLogger:
-    def __init__(self, config: WandbParams):
+    def __init__(self, config: WandbParams, last_iteration):
         filtered_config = {k: v for k, v in config.asdict().items() if v not in (None, '')}
         #print(filtered_config)
         wandb.init(**filtered_config)
         self.config = config
         self.image_interval = 200
+        self.last_iteration = last_iteration
 
-    def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, ssim_value, loss, reward, image, gt_image):
-        # Log these metrics every iteration
-        wandb.log({
+    def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, ssim_value, loss, reward, image, gt_image, additional_rewards):
+        iteration += self.last_iteration  # Adjust the iteration number
+
+        log_data = {
             f'train_iter/candidate_{candidate_index}/l1_loss': Ll1.item(),
             f'train_iter/candidate_{candidate_index}/loss': loss.item(),
             f'train_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
             f'train_iter/candidate_{candidate_index}/reward': reward,
-        #    f'train_iter/candidate_{candidate_index}num_points': gaussians.num_points,
-        }, step=iteration)
+        }
+        
+        # Log additional rewards if provided
+        if additional_rewards:
+            for reward_name, reward_value in additional_rewards.items():
+                log_data[f'train_iter/candidate_{candidate_index}/{reward_name}'] = reward_value
+
+        wandb.log(log_data, step=iteration)
         
         # Log these metrics at intervals specified by self.image_interval
         if iteration % self.image_interval == 0:
@@ -39,6 +47,7 @@ class WandBLogger:
             }, step=iteration)
 
     def log_densification_step(self, iteration, candidate_index, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop):
+        iteration += self.last_iteration  # Adjust the iteration number
         wandb.log({
             f'densification_step/candidate_{candidate_index}/n_cloned': n_cloned,
             f'densification_step/candidate_{candidate_index}/n_splitted': n_splitted,
@@ -52,12 +61,14 @@ class WandBLogger:
         }, step=iteration)
 
     def log_point_cloud(self, point_cloud, iteration=0):
+        iteration += self.last_iteration  # Adjust the iteration number
         wandb.log(
             {"point_cloud": wandb.Object3D(point_cloud)},
             step=iteration
         )
 
     def log_rl_loss(self, iteration, loss, advantage, policy_optimizer):
+        iteration += self.last_iteration  # Adjust the iteration number
         lr = policy_optimizer.param_groups[0]['lr']
         wandb.log({
             "rl_train_iter/learning_rate": lr,

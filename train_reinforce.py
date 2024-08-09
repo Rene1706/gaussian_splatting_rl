@@ -117,6 +117,7 @@ def training(
         eval_output_path=None
 ):
     first_iter = 0
+    last_iter = 0
     # Get reward function to be used
     reward_function_name = rlp.reward_function
     print("Reward function used: ", reward_function_name)
@@ -124,13 +125,25 @@ def training(
     # Import the rewards module
     rewards_module = importlib.import_module("rewards.rewards")
 
+    # Construct the list of reward functions from the names in rlp.reward_function
+    reward_functions = []
+    for reward_name in rlp.reward_function:
+        try:
+            reward_func = getattr(rewards_module, reward_name)
+            reward_functions.append(reward_func)
+        except AttributeError:
+            print(f"Warning: Reward function '{reward_name}' not found in the rewards module.")
+            continue
+
+    if not reward_functions:
+        raise ValueError("No valid reward functions found. Please check the reward_function names in rl_params.")
     # Get the reward function from the module
-    reward_function = getattr(rewards_module, reward_function_name)
+    reward_function = reward_functions[0]  # Use the first one as the primary
 
     tb_writer = prepare_output_and_logger(dataset, wandb_config, eval_output_path)
     init_gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, init_gaussians)
-
+    last_iter = get_last_iteration(rlp.train_rl)
     wandb_logger.log_point_cloud(init_gaussians.initial_pcd.xyzrgb)
     
     init_gaussians.training_setup(opt)
@@ -235,9 +248,14 @@ def training(
             reward = reward_function(loss, psnr_value, gaussians)
             gaussian_selection_rewards[i] = reward
 
+            # Calculate and log additional rewards
+            additional_rewards = {}
+            for func in reward_functions[1:]:
+                additional_rewards[func.__name__] = func(loss, psnr_value, gaussians)
+
             #TODO Rene implement wandblogger
             with torch.no_grad():
-                wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, ssim_value, loss, reward, image, gt_image)
+                wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, ssim_value, loss, reward, image, gt_image, additional_rewards)
         iter_end.record()
 
         with torch.no_grad():
@@ -284,11 +302,12 @@ def training(
                                 policy_optimizer.step()
                                 lr_scheduler.step()
 
-                        with torch.no_grad():
-                            wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
+                            with torch.no_grad():
+                                wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
 
                         if break_training:
                             print(f"\nNumber of gaussians is outside the range. Optimizing action selector and stopping.")
+                            last_iter += iteration
                             # Saving Meta Model as run will be stopped (Not needed as with break it will get saved regardless)
                             # if rlp.meta_model and rlp.train_rl: 
                                 #save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
@@ -352,10 +371,13 @@ def training(
                     (gaussians.capture(), iteration),
                     Path(scene.model_path) / f"chkpnt{iteration}.pth",
                 )
+    last_iter += iteration
 
     # Saving Meta Model
     if rlp.meta_model and rlp.train_rl:
         save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
+    # Save iterations so logging can be done in one run
+    save_last_iteration(rlp.train_rl, last_iter)
 
 
 # Function to save model and optimizer states
@@ -366,6 +388,25 @@ def save_model_optimizer_scheduler(model_path, optimizer_path, scheduler_path, m
     torch.save(optimizer.state_dict(), optimizer_path)
     print(f"Saving scheduler state to {scheduler_path}")
     torch.save(scheduler.state_dict(), scheduler_path)
+
+def save_last_iteration(train_rl, iteration):
+    print(f"Saving last iteration: {iteration}")
+    if train_rl:
+        iteration_file = Path("last_iteration_train.txt")
+    else: 
+        iteration_file = Path("last_iteration_eval.txt")
+    with iteration_file.open("w") as f:
+        f.write(str(iteration))
+
+def get_last_iteration(train_rl):
+    if train_rl:
+        iteration_file = Path("last_iteration_train.txt")
+    else: 
+        iteration_file = Path("last_iteration_eval.txt")
+    if iteration_file.exists():
+        with iteration_file.open("r") as f:
+            return int(f.read().strip())
+    return 0
 
 # Unused function to be used to update the action selector
 def rl_update(policy_optimizer, lr_scheduler, log_probability_candidates, gaussian_selection_rewards):
@@ -504,12 +545,15 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     # Example usage
     wandb_config = wdbp.extract(args)
-    wandb_logger = WandBLogger(wandb_config)
+    rlp_config = rlp.extract(args)
+    lp_config = lp.extract(args)
+    last_iteration = get_last_iteration(rlp_config.train_rl)
+    wandb_logger = WandBLogger(wandb_config, last_iteration)
     training(
-        lp.extract(args),
+        lp_config,
         op.extract(args),
         pp.extract(args),
-        rlp.extract(args),
+        rlp_config,
         wandb_config,
         args.test_iterations,
         args.save_iterations,

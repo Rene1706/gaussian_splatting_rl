@@ -100,9 +100,10 @@ def train_and_evaluate(cfg, datasets, output_path):
         # RL Training
         if not cfg.eval_params.skip_training:
             cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, train_dataset)
-            cfg.wandb_params.name = f"RL_train_epoch_{epoch}_{unique_str}"
+            cfg.wandb_params.name = f"RL_train_{unique_str}"
+            cfg.wandb_params.id = f"RL_train_{unique_str}"
             cfg.wandb_params.group = "training"
-            cfg.wandb_params.tags = ["training", f"epoch_{epoch}", f"reward_{cfg.rl_params.reward_function}"]
+            cfg.wandb_params.tags = ["training", f"reward_{cfg.rl_params.reward_function}"]
             # Optimizing the RL model
             cfg.rl_params.train_rl = True
             training_command = create_training_command(cfg)
@@ -111,9 +112,10 @@ def train_and_evaluate(cfg, datasets, output_path):
         # Optimization with RL model without learning
         if not cfg.eval_params.skip_eval:
             cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, eval_dataset)
-            cfg.wandb_params.name = f"RL_eval_epoch_{epoch}_{unique_str}"
+            cfg.wandb_params.name = f"RL_eval_{unique_str}"
+            cfg.wandb_params.id = f"RL_eval_{unique_str}"
             cfg.wandb_params.group = "evaluation"
-            cfg.wandb_params.tags = ["evaluation", f"epoch_{epoch}", f"reward_{cfg.rl_params.reward_function}"]
+            cfg.wandb_params.tags = ["evaluation", f"reward_{cfg.rl_params.reward_function}"]
             # Skip optimizing the RL model
             cfg.rl_params.train_rl = False
             training_command = create_training_command(cfg)
