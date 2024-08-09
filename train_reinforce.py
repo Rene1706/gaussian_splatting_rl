@@ -46,7 +46,6 @@ except ImportError:
 DO_PLOT = False
 CSV_LOG_FILE = "output/pareto.csv"  # if None -> Dont log psnr, ... in file
 
-
 def visualize_grad_scaling(gaussians, name, scene, *, actions=None):
     extent = scene.cameras_extent
     with torch.no_grad():
@@ -334,7 +333,8 @@ def training(
 
                     gaussian_candidate_list.clear()
                     gaussian_selection_rewards.clear()
-                    wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
+                    if iteration % 200 == 0:
+                        wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
                     for i, actions in enumerate(action_candidates):
                         gaussian_clone = deepcopy(gaussians)
                         visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)

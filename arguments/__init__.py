@@ -106,7 +106,7 @@ class RLParams(ParamGroup):
         self.lr_scheduler = "lr_scheduler.torch"
         self.train_rl = False
         self.num_candidates = 2
-        self.reward_function = "reward_default"
+        self.reward_function = ["reward_default"]
 
         super().__init__(parser, "RL Parameters")
 
