@@ -1,15 +1,16 @@
 #!/bin/bash
 
-# Set the root directory containing your training run output folders
-ROOT_DIR="."
-
-# Find all 'wandb' folders and sync them
-find "$ROOT_DIR" -type d -name 'wandb' | while read -r wandb_folder; do
-    echo "Syncing $wandb_folder..."
-    wandb sync "$wandb_folder"
-    if [ $? -eq 0 ]; then
-        echo "Successfully synced $wandb_folder"
-    else
-        echo "Failed to sync $wandb_folder"
+# Iterate over each directory in the current directory
+for dir in */ ; do
+    # Exclude the .submitit directory
+    if [[ "$dir" != ".submitit/" ]]; then
+        # Enter the directory
+        cd "$dir"
+        
+        # Run the command with the desired parameters
+        wandb sync --sync-all --append
+        
+        # Return to the parent directory
+        cd ..
     fi
 done

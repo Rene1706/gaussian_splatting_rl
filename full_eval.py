@@ -8,6 +8,7 @@ import random
 import datetime
 import pprint
 from pathlib import Path
+import random
 
 # Get the current script directory
 script_dir = Path(__file__).parent
@@ -77,7 +78,7 @@ def run_command(command, env=None):
 
 def train_and_evaluate(cfg, datasets, output_path):
     # Create log directory for this full evaluation run
-    unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f") + "_" + str(random.randint(1000, 9999))
     full_eval_output_path = os.path.join("./output/", f"full_eval_{unique_str}")
     os.makedirs(full_eval_output_path, exist_ok=True)
     # Convert the relative path to an absolute path
@@ -106,7 +107,7 @@ def train_and_evaluate(cfg, datasets, output_path):
             run_command(training_command, env=os.environ.copy())
 
         # Optimization with RL model without learning
-        if not cfg.eval_params.skip_eval:
+        if not cfg.eval_params.skip_eval and epoch % cfg.eval_params.eval_frequency == 0:
             cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, eval_dataset)
             cfg.wandb_params.name = f"RL_eval_{unique_str}"
             cfg.wandb_params.id = f"RL_eval_{unique_str}"

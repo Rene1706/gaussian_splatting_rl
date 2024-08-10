@@ -41,9 +41,9 @@ eval_params:
   skip_rendering: false
   skip_metrics: false
   skip_eval: false
-  output_path: "./eval"
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 400
+  epochs: 100
+  eval_frequency: 10
   
   
 script_params:
@@ -61,7 +61,7 @@ script_params:
   eval_output_path: ""
   
 wandb_params:
-  project: my-project
+  project: master
   entity:
   name: null
   group: null
@@ -84,9 +84,10 @@ rl_params:
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
-  num_candidates: 2
+  num_candidates: 6
   reward_function: ["reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
-
+ #TODO Make all rewards are gotten from rewards.py and then just the one used here used as real reward
+ # Otherwhise slurm hydra sweep not working
 hydra:
   run:
     dir: ./hydra/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
