@@ -14,11 +14,11 @@ import datetime
 from argparse import ArgumentParser, Namespace
 from copy import deepcopy
 from pathlib import Path
-from random import randint
+from random import randint, sample
 
 import matplotlib.pyplot as plt
 import torch
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, ExponentialLR
 from tqdm import tqdm
 
 from arguments import ModelParams, PipelineParams, OptimizationParams, WandbParams, RLParams
@@ -115,6 +115,12 @@ def training(
         run_name="",
         eval_output_path=None
 ):
+    # Initialize a buffer for storing (log_probs, reward) pairs
+    max_buffer_size = 1000000  # Buffer can hold up to 1,000,000 log_probs
+    buffer = []
+    densification_counter = 0
+
+    # Initilize run
     first_iter = 0
     last_iter = 0
     # Get reward function to be used
@@ -167,10 +173,15 @@ def training(
 
     # Only use one candidate for evaluation optimization run
     k = rlp.num_candidates if rlp.train_rl else 1
+
+    # Initilize RL agent objects
     action_selector = ParamBasedActionSelector(k=k).to("cuda")
     policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
-    lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
-    # Load RL meta model and optimizer
+    #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
+    lr_scheduler = ExponentialLR(policy_optimizer, gamma=0.98)
+
+
+    # Load RL meta model, optimizer and scheduler
     if rlp.meta_model and Path(rlp.meta_model).exists():
         print(f"Loading meta_model from {rlp.meta_model}")
         action_selector.load_state_dict(torch.load(rlp.meta_model))
@@ -280,29 +291,82 @@ def training(
             if iteration < opt.densify_until_iter:
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     if log_probability_candidates is not None:
-                        # Check if there are too many/less gaussians to kill the training before error 
+                        densification_counter += 1
+                        # Check each candidate and adjust reward if necessary
+                        for i, gaussians in enumerate(gaussian_candidate_list):
+                            if gaussians.num_points > 300000 or gaussians.num_points < 200:
+                                gaussian_selection_rewards[i] = -1  # Set reward to -1 for this candidate
+
+                        # Calculate advantages for each candidate
+                        baseline = torch.mean(torch.tensor(gaussian_selection_rewards, dtype=torch.float32))  # Baseline (e.g., mean reward)
+
+                        advantage_candidates = [reward - baseline for reward in gaussian_selection_rewards]
+                        # ? advantage_candidates: List of scalars, length == len(gaussian_candidate_list)
+
+                        # Randomly sample a subset of log_probs from each candidate and update the buffer with (log_probs, advantage) pairs
+                        for candidate_idx in range(len(log_probability_candidates)):  # Iterate over candidates
+                            # Randomly select a subset of log_probs from the candidate
+                            num_samples = max(1, int(0.1 * log_probability_candidates[candidate_idx].shape[0]))  # 10% of log_probs
+                            # ? num_samples: int (10% of the number of log_probs for the candidate)
+                            print("Num_samples: ", num_samples)
+
+                            selected_indices = sample(range(log_probability_candidates[candidate_idx].shape[0]), num_samples)
+                            # ? selected_indices: List[int], length == num_samples
+                            print("Selected_indices: ", len(selected_indices))
+
+                            sampled_log_probs = log_probability_candidates[candidate_idx][selected_indices]
+                            # ? sampled_log_probs: Tensor, shape == [num_samples]
+                            print("Sampled_log_probs: ", sampled_log_probs)
+
+                            sampled_advantage = advantage_candidates[candidate_idx]  # Advantage for this candidate
+                            # ? sampled_advantage: Scalar
+                            print("Sampled_advantage: ", sampled_advantage)
+
+                            # Add the sampled (log_probs, advantage) pair to the buffer
+                            for log_prob in sampled_log_probs:
+                                if len(buffer) < max_buffer_size:
+                                    buffer.append((log_prob, sampled_advantage))
+                                    # ? buffer: List[Tuple[Tensor, Scalar]], each Tensor is 1D with shape []
+                                else:
+                                    buffer[randint(0, max_buffer_size - 1)] = (log_prob, sampled_advantage)  # Random replacement if full
+                            print("Buffer: ", len(buffer))
+
                         break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 200 for gaussian in gaussian_candidate_list)
                         # Update meta policy
-                        if rlp.train_rl:
-                            with torch.enable_grad():
-                                policy_optimizer.zero_grad(set_to_none=True)
-                                if break_training:
-                                    # Create negativ reward if the training would error soon
-                                    num_can = log_probability_candidates.shape[0]
-                                    rewards = torch.tensor([-1.0] * num_can, dtype=torch.float32, device="cuda")  # [Kandidaten]  
-                                else:
-                                    rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]                                
-                                advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8) #[Kandidaten]                                
-                                expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates) # [Kandidaten, Number Gaussians]   
-                                # Maybe add entropy loss for exploration
-                                # entropy_loss = -torch.mean(torch.sum(log_probability_candidates * torch.exp(log_probability_candidates), dim=1))                             
-                                loss = -torch.mean(log_probability_candidates * expanded_advantage)
+                        with torch.enable_grad():
+                            # Every 10 iterations, use the buffer to update the policy model
+                            if (densification_counter) % 10 == 0 and rlp.train_rl:
+                                sample_size = max(1, int(0.1 * len(buffer)))  # Sample 10% of the buffer
+                                # ? sample_size: int
+
+                                sampled_entries = sample(buffer, sample_size)
+                                # ? sampled_entries: List[Tuple[Tensor, Scalar]], length == sample_size
+                                print("Sampled_entries: ", len(sampled_entries))
+
+                                log_probs_tensor = torch.stack([entry[0] for entry in sampled_entries])
+                                # ? log_probs_tensor: Tensor, shape == [sample_size]
+                                print("Log_probs_tensor: ", log_probs_tensor.shape)
+                                assert log_probs_tensor.requires_grad, "Log_probs_tensor does not require gradients!"
+
+                                advantages_tensor = torch.tensor([entry[1] for entry in sampled_entries])
+                                # ?advantages_tensor: Tensor, shape == [sample_size]
+                                # Ensure that both tensors are on the same device
+                                advantages_tensor = advantages_tensor.to(log_probs_tensor.device)
+                                print("Advantages_tensor: ", advantages_tensor.shape)
+
+
+                                # Update the policy network using the saved advantages
+                                policy_optimizer.zero_grad()
+                                loss = -torch.mean(log_probs_tensor * advantages_tensor)
+                                # ? loss: Tensor, scalar value
+                                print("Loss: ", loss)
+
                                 loss.backward()
                                 policy_optimizer.step()
                                 lr_scheduler.step()
 
-                            with torch.no_grad():
-                                wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
+                            #with torch.no_grad():
+                                #wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
 
                         if break_training:
                             print(f"\nNumber of gaussians is outside the range. Optimizing action selector and stopping.")
