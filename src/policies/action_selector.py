@@ -184,5 +184,6 @@ class ParamBasedActionSelector(ActionSelector):
         action_dist = torch.distributions.Categorical(action_probs)
         actions = action_dist.sample((self.k,)).to("cuda")   # using sample for discrete actions
         log_probs = action_dist.log_prob(actions)
+        assert log_probs.requires_grad, "Log probs should require grad"
 
         return actions, log_probs.squeeze()

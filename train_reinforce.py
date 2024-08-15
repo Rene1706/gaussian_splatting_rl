@@ -117,7 +117,11 @@ def training(
 ):
     # Initialize a buffer for storing (log_probs, reward) pairs
     max_buffer_size = 1000000  # Buffer can hold up to 1,000,000 log_probs
-    buffer = []
+    # Initialize buffers for storing log_probs and advantages
+    buffer_log_probs = torch.tensor([], requires_grad=True, device='cuda')
+    # ? buffer_log_probs: Tensor, shape == [buffer_size], stores log_probs
+    buffer_advantages = torch.empty(0, device='cuda')
+    # ? buffer_advantages: Tensor, shape == [buffer_size], stores corresponding advantages
     densification_counter = 0
 
     # Initilize run
@@ -303,67 +307,79 @@ def training(
                         advantage_candidates = [reward - baseline for reward in gaussian_selection_rewards]
                         # ? advantage_candidates: List of scalars, length == len(gaussian_candidate_list)
 
-                        # Randomly sample a subset of log_probs from each candidate and update the buffer with (log_probs, advantage) pairs
-                        for candidate_idx in range(len(log_probability_candidates)):  # Iterate over candidates
-                            # Randomly select a subset of log_probs from the candidate
-                            num_samples = max(1, int(0.1 * log_probability_candidates[candidate_idx].shape[0]))  # 10% of log_probs
-                            # ? num_samples: int (10% of the number of log_probs for the candidate)
-                            print("Num_samples: ", num_samples)
+                        # Randomly sample a subset of log_probs from each candidate and update the buffer
+                        with torch.enable_grad():
+                            for candidate_idx in range(len(log_probability_candidates)):  # Iterate over candidates
+                                num_samples = max(1, int(0.1 * log_probability_candidates[candidate_idx].shape[0]))  # 10% of log_probs
+                                # ? num_samples: int, the number of log_probs to sample (10% of total for the candidate)
+                                print("Num_samples: ", num_samples)
 
-                            selected_indices = sample(range(log_probability_candidates[candidate_idx].shape[0]), num_samples)
-                            # ? selected_indices: List[int], length == num_samples
-                            print("Selected_indices: ", len(selected_indices))
+                                selected_indices = sample(range(log_probability_candidates[candidate_idx].shape[0]), num_samples)
+                                # ? selected_indices: List[int], length == num_samples, indices of selected log_probs
+                                print("Selected_indices: ", len(selected_indices))
 
-                            sampled_log_probs = log_probability_candidates[candidate_idx][selected_indices]
-                            # ? sampled_log_probs: Tensor, shape == [num_samples]
-                            print("Sampled_log_probs: ", sampled_log_probs)
+                                # sampled_log_probs = log_probability_candidates[candidate_idx][selected_indices]
+                                # * Ensure that the sampled log_probs require gradients
+                                sampled_log_probs = log_probability_candidates[candidate_idx][selected_indices]
+                                # ? sampled_log_probs: Tensor, shape == [num_samples], log_probs selected from the candidate
+                                print("Sampled_log_probs: ", sampled_log_probs)
+                                assert sampled_log_probs.requires_grad, "Sampled log_probs require gradients!"
 
-                            sampled_advantage = advantage_candidates[candidate_idx]  # Advantage for this candidate
-                            # ? sampled_advantage: Scalar
-                            print("Sampled_advantage: ", sampled_advantage)
+                                sampled_advantage = advantage_candidates[candidate_idx]  # Advantage for this candidate
+                                # ? sampled_advantage: Scalar, the advantage value corresponding to the candidate
+                                print("Sampled_advantage: ", sampled_advantage)
 
-                            # Add the sampled (log_probs, advantage) pair to the buffer
-                            for log_prob in sampled_log_probs:
-                                if len(buffer) < max_buffer_size:
-                                    buffer.append((log_prob, sampled_advantage))
-                                    # ? buffer: List[Tuple[Tensor, Scalar]], each Tensor is 1D with shape []
-                                else:
-                                    buffer[randint(0, max_buffer_size - 1)] = (log_prob, sampled_advantage)  # Random replacement if full
-                            print("Buffer: ", len(buffer))
+                                # Add sampled log_probs and advantage to the buffer
+                                buffer_log_probs = torch.cat([buffer_log_probs, sampled_log_probs])
+                                # ? buffer_log_probs: Tensor, updated shape == [current_buffer_size + num_samples]
+                                assert buffer_log_probs.requires_grad, "Buffer log_probs require gradients!"
+                                buffer_advantages = torch.cat([buffer_advantages, torch.tensor([sampled_advantage] * num_samples, device='cuda')])
+                                # ? buffer_advantages: Tensor, updated shape == [current_buffer_size + num_samples]
+                                
+                                print("Buffer size: ", buffer_log_probs.shape, buffer_advantages.shape)
+                            
+                            # Ensure the buffer size does not exceed the maximum size
+                            if buffer_log_probs.shape[0] > max_buffer_size:
+                                # Randomly select indices to keep in the buffer
+                                indices_to_keep = sample(range(buffer_log_probs.shape[0]), max_buffer_size)
+                                # ? indices_to_keep: List[int], length == max_buffer_size, indices of entries to retain in the buffer
+                                buffer_log_probs = buffer_log_probs[indices_to_keep]
+                                buffer_advantages = buffer_advantages[indices_to_keep]
+                                # ? buffer_log_probs: Tensor, shape == [max_buffer_size]
+                                # ? buffer_advantages: Tensor, shape == [max_buffer_size]
 
                         break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 200 for gaussian in gaussian_candidate_list)
                         # Update meta policy
                         with torch.enable_grad():
-                            # Every 10 iterations, use the buffer to update the policy model
-                            if (densification_counter) % 10 == 0 and rlp.train_rl:
-                                sample_size = max(1, int(0.1 * len(buffer)))  # Sample 10% of the buffer
-                                # ? sample_size: int
+                            if (densification_counter) % 3 == 0 and rlp.train_rl:
+                                sample_size = max(1, int(0.1 * buffer_log_probs.shape[0]))  # Sample 10% of the buffer
+                                # ? sample_size: int, number of entries to sample from the buffer
+                                print("Sample size: ", sample_size)
 
-                                sampled_entries = sample(buffer, sample_size)
-                                # ? sampled_entries: List[Tuple[Tensor, Scalar]], length == sample_size
-                                print("Sampled_entries: ", len(sampled_entries))
-
-                                log_probs_tensor = torch.stack([entry[0] for entry in sampled_entries])
-                                # ? log_probs_tensor: Tensor, shape == [sample_size]
+                                sampled_indices = sample(range(buffer_log_probs.shape[0]), sample_size)
+                                # ? sampled_indices: List[int], length == sample_size, indices of selected entries from the buffer
+                                log_probs_tensor = buffer_log_probs[sampled_indices]
+                                # ? log_probs_tensor: Tensor, shape == [sample_size], selected log_probs for updating the policy
                                 print("Log_probs_tensor: ", log_probs_tensor.shape)
                                 assert log_probs_tensor.requires_grad, "Log_probs_tensor does not require gradients!"
 
-                                advantages_tensor = torch.tensor([entry[1] for entry in sampled_entries])
-                                # ?advantages_tensor: Tensor, shape == [sample_size]
+                                advantages_tensor = buffer_advantages[sampled_indices]
+                                # ? advantages_tensor: Tensor, shape == [sample_size], corresponding advantages for the selected log_probs
                                 # Ensure that both tensors are on the same device
                                 advantages_tensor = advantages_tensor.to(log_probs_tensor.device)
                                 print("Advantages_tensor: ", advantages_tensor.shape)
 
-
                                 # Update the policy network using the saved advantages
                                 policy_optimizer.zero_grad()
                                 loss = -torch.mean(log_probs_tensor * advantages_tensor)
-                                # ? loss: Tensor, scalar value
+                                # ? loss: Tensor, scalar value, computed loss for policy update
                                 print("Loss: ", loss)
 
-                                loss.backward()
+                                # Retain Graph True needed as entries in buffer can be used mutliple times
+                                loss.backward(retain_graph=True) # 
                                 policy_optimizer.step()
                                 lr_scheduler.step()
+                                print("!!Policy optimizer step done !!")
 
                             #with torch.no_grad():
                                 #wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
@@ -394,6 +410,7 @@ def training(
                             iteration=iteration,
                             scene_extent=scene.cameras_extent
                         )
+                    assert log_probability_candidates.requires_grad, "log_probability_candidates require gradients!"
 
                     gaussian_candidate_list.clear()
                     gaussian_selection_rewards.clear()
@@ -598,8 +615,6 @@ if __name__ == "__main__":
     args.save_iterations.append(args.iterations)
 
     print(f"Optimizing {args.model_path}")
-    # action_selector = GradNormThresholdSelector(init_threshold=0.17333875596523285 / 1000)
-    # torch.save(action_selector.state_dict(),args.meta_model)
 
     # Initialize system state (RNG)
     safe_state(silent=args.quiet)
