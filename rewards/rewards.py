@@ -22,6 +22,9 @@ def reward_function_5(loss, psnr_value, gaussians):
     
     return -loss_impact/num_points
 
+def reward_function_6(loss, psnr_value, gaussians):
+    return -loss.detach()/math.log(gaussians.num_points)
+
 def reward_psnr_normalized(loss, psnr, gaussians):
     # Normalize PSNR to the range [0, 1]
     if isinstance(psnr, torch.Tensor):
@@ -41,6 +44,17 @@ def reward_psnr_normalized_2(loss, psnr, gaussians):
     # Normalize PSNR to the range [0, 1]
     reward = min(max(psnr / 50.0, 0), 1)
     reward = reward / gaussians.num_points
+    return torch.tensor(reward, device="cuda")
+
+def reward_psnr_normalized_log_num_gauss(loss, psnr, gaussians):
+    # Normalize PSNR to the range [0, 1]
+    if isinstance(psnr, torch.Tensor):
+        # Reduce the tensor to a scalar value by taking the mean
+        psnr = psnr.mean().item()
+
+    # Normalize PSNR to the range [0, 1]
+    reward = min(max(psnr / 45.0, 10), 1)
+    reward = reward / math.log(gaussians.num_points)
     return torch.tensor(reward, device="cuda")
 
 def reward_psnr_normalized_3(loss, psnr, gaussians):
