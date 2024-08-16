@@ -129,18 +129,18 @@ class ParamNetwork(nn.Module):
         nn.init.zeros_(self.fc3.weight)
         nn.init.zeros_(self.fc1.bias)
         nn.init.zeros_(self.fc2.bias)
-        nn.init.zeros_(self.fc3.bias)
+        #nn.init.zeros_(self.fc3.bias)
         
         # Initialize fc3 weights and biases for changed probabilities
-        #nn.init.zeros_(self.fc3.weight)
-        #nn.init.constant_(self.fc3.bias, 0.0)  # Initialize biases to 0
+        nn.init.zeros_(self.fc3.weight)
+        nn.init.constant_(self.fc3.bias, 0.0)  # Initialize biases to 0
         
         # Example: Increase the bias for a specific action to increase its initial probability
         # Assuming you want to favor the first action initially:
-        #self.fc3.bias.data[0] = 1.0  # Increase bias for the first action
-        #self.fc3.bias.data[1] = -1.0  # Decrease bias for the second action
-        #self.fc3.bias.data[2] = -1.0  # Decrease bias for the third action
-        #self.fc3.bias.data[3] = -1.0  # Decrease bias for the fourth action
+        self.fc3.bias.data[0] = 2.0  # Increase bias for the first action
+        self.fc3.bias.data[1] = -2.0  # Decrease bias for the second action
+        self.fc3.bias.data[2] = -2.0  # Decrease bias for the third action
+        self.fc3.bias.data[3] = -2.0  # Decrease bias for the fourth action
     
     def forward(self, x):
         x = torch.relu(self.fc1(x))
