@@ -42,8 +42,8 @@ eval_params:
   skip_metrics: false
   skip_eval: false
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 100
-  eval_frequency: 10
+  epochs: 4
+  eval_frequency: 3
   
   
 script_params:
@@ -85,7 +85,7 @@ rl_params:
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
   num_candidates: 6
-  reward_function: ["reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
+  reward_function: ["reward_psnr_normalized_log_num_gauss", "reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
  #TODO Make all rewards are gotten from rewards.py and then just the one used here used as real reward
  # Otherwhise slurm hydra sweep not working
 hydra:
@@ -94,7 +94,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 360
+    timeout_min: 60
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1
@@ -105,6 +105,6 @@ hydra:
         - module load GCC/11.2.0
         - module load CUDA/12.3.0
         - export PYTHONPATH=$PYTHONPATH:/bigwork/nhmlhuer/git/gaussian_splatting_rl/src/
-        - source activate gaussian_splatting_rl
+        - source activate rl
 
 training_script: "train_reinforce.py"

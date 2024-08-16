@@ -169,7 +169,7 @@ def training(
     k = rlp.num_candidates if rlp.train_rl else 1
     action_selector = ParamBasedActionSelector(k=k).to("cuda")
     policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
-    lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
+    #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
     # Load RL meta model and optimizer
     if rlp.meta_model and Path(rlp.meta_model).exists():
         print(f"Loading meta_model from {rlp.meta_model}")
@@ -179,9 +179,9 @@ def training(
         print(f"Loading optimizer from {rlp.optimizer}")
         policy_optimizer.load_state_dict(torch.load(rlp.optimizer))
 
-    if rlp.lr_scheduler and Path(rlp.lr_scheduler).exists():
-        print(f"Loading scheduler from {rlp.lr_scheduler}")
-        lr_scheduler.load_state_dict(torch.load(rlp.lr_scheduler))
+    #if rlp.lr_scheduler and Path(rlp.lr_scheduler).exists():
+    #    print(f"Loading scheduler from {rlp.lr_scheduler}")
+    #    lr_scheduler.load_state_dict(torch.load(rlp.lr_scheduler))
 
     
     candidates_created = 0  # Counter when the last candidates were created
@@ -282,16 +282,15 @@ def training(
                     if log_probability_candidates is not None:
                         # Check if there are too many/less gaussians to kill the training before error 
                         break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 200 for gaussian in gaussian_candidate_list)
+                        # Check each candidate and adjust reward if necessary
+                        for i, gaussians in enumerate(gaussian_candidate_list):
+                            if gaussians.num_points > 300000 or gaussians.num_points < 200:
+                                gaussian_selection_rewards[i] = torch.tensor(-1.0, device="cuda")  # Set reward to -1 for this candidate
                         # Update meta policy
                         if rlp.train_rl:
                             with torch.enable_grad():
                                 policy_optimizer.zero_grad(set_to_none=True)
-                                if break_training:
-                                    # Create negativ reward if the training would error soon
-                                    num_can = log_probability_candidates.shape[0]
-                                    rewards = torch.tensor([-1.0] * num_can, dtype=torch.float32, device="cuda")  # [Kandidaten]  
-                                else:
-                                    rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]                                
+                                rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]                                
                                 advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8) #[Kandidaten]                                
                                 expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates) # [Kandidaten, Number Gaussians]   
                                 # Maybe add entropy loss for exploration
@@ -299,7 +298,7 @@ def training(
                                 loss = -torch.mean(log_probability_candidates * expanded_advantage)
                                 loss.backward()
                                 policy_optimizer.step()
-                                lr_scheduler.step()
+                                #lr_scheduler.step()
 
                             with torch.no_grad():
                                 wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
@@ -375,6 +374,7 @@ def training(
 
     # Saving Meta Model
     if rlp.meta_model and rlp.train_rl:
+        lr_scheduler = 0
         save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
     # Save iterations so logging can be done in one run
     save_last_iteration(rlp.train_rl, last_iter)
@@ -386,8 +386,8 @@ def save_model_optimizer_scheduler(model_path, optimizer_path, scheduler_path, m
     torch.save(model.state_dict(), model_path)
     print(f"Saving optimizer state to {optimizer_path}")
     torch.save(optimizer.state_dict(), optimizer_path)
-    print(f"Saving scheduler state to {scheduler_path}")
-    torch.save(scheduler.state_dict(), scheduler_path)
+    #print(f"Saving scheduler state to {scheduler_path}")
+    #torch.save(scheduler.state_dict(), scheduler_path)
 
 def save_last_iteration(train_rl, iteration):
     print(f"Saving last iteration: {iteration}")
