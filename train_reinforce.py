@@ -181,8 +181,8 @@ def training(
     # Initilize RL agent objects
     action_selector = ParamBasedActionSelector(k=k).to("cuda")
     policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
-    #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
-    lr_scheduler = ExponentialLR(policy_optimizer, gamma=0.98)
+    lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
+    #lr_scheduler = ExponentialLR(policy_optimizer, gamma=0.98)
 
 
     # Load RL meta model, optimizer and scheduler
@@ -376,10 +376,17 @@ def training(
                                 print("Loss: ", loss)
 
                                 # Retain Graph True needed as entries in buffer can be used mutliple times
-                                loss.backward(retain_graph=True) # 
+                                loss.backward(retain_graph=False) # 
                                 policy_optimizer.step()
                                 lr_scheduler.step()
                                 print("!!Policy optimizer step done !!")
+                                # After the backward pass, remove the sampled entries from the buffers
+                                mask = torch.ones(buffer_log_probs.size(0), dtype=torch.bool, device=buffer_log_probs.device)
+                                mask[sampled_indices] = False
+                                buffer_log_probs = buffer_log_probs[mask]
+                                buffer_advantages = buffer_advantages[mask]
+
+                                print(f"Buffer size after deletion: {buffer_log_probs.shape}, {buffer_advantages.shape}")
 
                             #with torch.no_grad():
                                 #wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
