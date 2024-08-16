@@ -34,8 +34,8 @@ class WandBLogger:
         if additional_rewards:
             for reward_name, reward_value in additional_rewards.items():
                 log_data[f'train_iter/candidate_{candidate_index}/{reward_name}'] = reward_value
-
-        wandb.log(log_data, step=iteration)
+        if candidate_index == 0:
+            wandb.log(log_data, step=iteration)
         
         # Log these metrics at intervals specified by self.image_interval
         if iteration % self.image_interval == 0:
@@ -48,17 +48,18 @@ class WandBLogger:
 
     def log_densification_step(self, iteration, candidate_index, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop):
         iteration += self.last_iteration  # Adjust the iteration number
-        wandb.log({
-            f'densification_step/candidate_{candidate_index}/n_cloned': n_cloned,
-            f'densification_step/candidate_{candidate_index}/n_splitted': n_splitted,
-            f'densification_step/candidate_{candidate_index}/n_pruned': n_pruned,
-            f'densification_step/candidate_{candidate_index}/n_gaussians': n_gaussians,
-            f'densification_step/candidate_{candidate_index}/n_noop': n_noop,
-            f'densification_step/candidate_{candidate_index}/% n_cloned': (n_cloned/n_gaussians)*100,
-            f'densification_step/candidate_{candidate_index}/% n_splitted': (n_splitted/n_gaussians)*100,
-            f'densification_step/candidate_{candidate_index}/% n_pruned': (n_pruned/n_gaussians)*100,
-            f'densification_step/candidate_{candidate_index}/% n_noop': (n_noop/n_gaussians)*100
-        }, step=iteration)
+        if candidate_index == 0:
+            wandb.log({
+                f'densification_step/candidate_{candidate_index}/n_cloned': n_cloned,
+                f'densification_step/candidate_{candidate_index}/n_splitted': n_splitted,
+                f'densification_step/candidate_{candidate_index}/n_pruned': n_pruned,
+                f'densification_step/candidate_{candidate_index}/n_gaussians': n_gaussians,
+                f'densification_step/candidate_{candidate_index}/n_noop': n_noop,
+                f'densification_step/candidate_{candidate_index}/% n_cloned': (n_cloned/n_gaussians)*100,
+                f'densification_step/candidate_{candidate_index}/% n_splitted': (n_splitted/n_gaussians)*100,
+                f'densification_step/candidate_{candidate_index}/% n_pruned': (n_pruned/n_gaussians)*100,
+                f'densification_step/candidate_{candidate_index}/% n_noop': (n_noop/n_gaussians)*100
+            }, step=iteration)
 
     def log_point_cloud(self, point_cloud, iteration=0):
         iteration += self.last_iteration  # Adjust the iteration number
