@@ -307,15 +307,22 @@ def training(
                             reward = gaussian_selection_rewards[candidate_idx]  # Scalar
                             inputs = inputs_candidates  # Shape [100000, 3]
 
-                            # Iterate through each input-action pair and store in the replay buffer
-                            for input, action in zip(inputs, actions):
+                            # Combine inputs and actions into a list of tuples
+                            input_action_pairs = list(zip(inputs, actions))
+
+                            # Randomly select 50% of the input-action pairs
+                            sample_size = max(1, int(0.5 * len(input_action_pairs)))
+                            sampled_pairs = sample(input_action_pairs, sample_size)
+
+                            # Iterate through the sampled pairs and store them in the replay buffer
+                            for input, action in sampled_pairs:
                                 replay_buffer.add(input, action, reward)
 
 
                         break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 200 for gaussian in gaussian_candidate_list)
                         # Update meta policy
                         with torch.enable_grad():
-                            if (densification_counter) % 3 == 0 and rlp.train_rl:
+                            if (densification_counter) % 3 == 0 and rlp.train_rl or break_training:
                                 # Sample from the replay buffer
                                 sampled_inputs, sampled_actions, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.1 * replay_buffer.size())))
 
