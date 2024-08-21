@@ -153,6 +153,14 @@ class ParamBasedActionSelector(ActionSelector):
         super().__init__(k=k)
         self.param_network = ParamNetwork(input_size, hidden_size)
 
+
+    def get_policy(self, obs):
+        logits = self.param_network(obs)
+        return torch.distributions.Categorical(logits=logits)
+
+    def get_action(self, obs):
+        return self.get_policy(obs).sample().item()
+
     def forward(self, gaussians, *, iteration, scene_extent):
         grads = gaussians.xyz_gradient_accum / gaussians.denom
         grads[grads.isnan()] = 0.0
@@ -173,17 +181,9 @@ class ParamBasedActionSelector(ActionSelector):
             opacities.unsqueeze(-1)
         ], dim=-1)
         
-        # Get action probabilities from the parameter network
-        logits = self.param_network(inputs)
-        action_probs = torch.softmax(logits, dim=-1)
-        # Print logits and action probabilities for debugging
-        #print("Logits: ", logits)
-        #print("Action probabilities: ", action_probs)
+        # Get action probabilities from the parameter network using get_policy
+        policy = self.get_policy(inputs)
         
-        # Probabilistically sample k action candidates using rsample
-        action_dist = torch.distributions.Categorical(action_probs)
-        actions = action_dist.sample((self.k,)).to("cuda")   # using sample for discrete actions
-        log_probs = action_dist.log_prob(actions)
-        assert log_probs.requires_grad, "Log probs should require grad"
-
-        return actions, log_probs.squeeze()
+        # Sample k action candidates using the policy distribution
+        actions = policy.sample((self.k,)).to("cuda")
+        return actions, inputs
