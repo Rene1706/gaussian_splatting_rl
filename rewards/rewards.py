@@ -32,6 +32,24 @@ def reward_psnr_normalized(loss, psnr, gaussians):
     reward = min(max(psnr / 50.0, 0), 1)
     return torch.tensor(reward, device="cuda")
 
+def reward_psnr_normalized_log_num_gauss(loss, psnr, gaussians):
+    # Normalize PSNR to the range [0, 1]
+    if isinstance(psnr, torch.Tensor):
+        # Reduce the tensor to a scalar value by taking the mean
+        psnr = psnr.mean().item()
+
+    # Normalize PSNR to the range [0, 1]
+    reward = min(max(psnr / 45.0, 0), 1)
+
+    # Check that the number of Gaussians is not zero to avoid division by zero
+    if gaussians.num_points > 0:
+        reward = reward / math.log(gaussians.num_points)
+    else:
+        # Handle the case where num_points is zero (e.g., return a minimal reward)
+        reward = -1.0
+
+    return torch.tensor(reward, device="cuda")
+
 def reward_psnr_normalized_2(loss, psnr, gaussians):
     # Normalize PSNR to the range [0, 1]
     if isinstance(psnr, torch.Tensor):
