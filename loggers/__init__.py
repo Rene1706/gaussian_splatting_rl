@@ -12,11 +12,11 @@ from arguments import WandbParams
 
 
 class WandBLogger:
-    def __init__(self, config: WandbParams, last_iteration):
-        filtered_config = {k: v for k, v in config.asdict().items() if v not in (None, '')}
-        #print(filtered_config)
-        wandb.init(**filtered_config)
-        self.config = config
+    def __init__(self, wandb_args: WandbParams, wandb_config, last_iteration):
+        filtered_wandb_args = {k: v for k, v in wandb_args.asdict().items() if v not in (None, '')}
+        #print(filtered_wandb_args)
+        wandb.init(**filtered_wandb_args, config=wandb_config)
+        self.wandb_args = wandb_args
         self.image_interval = 200
         self.last_iteration = last_iteration
 
@@ -77,35 +77,3 @@ class WandBLogger:
         },step = iteration)
         for i, adv in enumerate(advantage):
             wandb.log({f"rl_train_iter/candidate_{i}/advantage": adv.item()}, step = iteration)
-
-    def log_evaluation(self, iteration, gaussians: GaussianModel, scene: Scene, renderFunc, renderArgs: tuple):
-        torch.cuda.empty_cache()
-        validation_configs = [
-            {"name": "test", "cameras": scene.getTestCameras()},
-            {"name": "train", "cameras": scene.getTrainCameras()},
-        ]
-        for config in validation_configs:
-            n_cameras = len(config["cameras"])
-            if n_cameras > 0:
-                l1_total, psnr_total, ssim_total = 0.0, 0.0, 0.0
-                images, gt_images = [], []
-                for idx, viewpoint in enumerate(config["cameras"]):
-                    image = torch.clamp(renderFunc(viewpoint, gaussians, *renderArgs)["render"], 0.0, 1.0)
-                    gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
-                    images.append(image)
-                    gt_images.append(gt_image)
-                    l1_total += l1_loss(image, gt_image).mean().double()
-                    psnr_total += psnr(image, gt_image).mean().double()
-                    ssim_total += ssim(image, gt_image).mean().double()
-                l1_avg = l1_total / n_cameras
-                psnr_avg = psnr_total / n_cameras
-                ssim_avg = ssim_total / n_cameras
-
-                wandb.log({
-                    f"{config['name']}/psnr": psnr_avg,
-                    f"{config['name']}/l1": l1_avg,
-                    f"{config['name']}/ssim": ssim_avg,
-                    f"{config['name']}/images": [wandb.Image(img, caption=f"Rendered {config['name']} Image {idx}") for idx, img in enumerate(images)],
-                    f"{config['name']}/gt_images": [wandb.Image(img, caption=f"GT {config['name']} Image {idx}") for idx, img in enumerate(gt_images)]
-                }, step=iteration)
-        torch.cuda.empty_cache()

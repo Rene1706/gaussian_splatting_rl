@@ -100,7 +100,7 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.wandb_params.name = f"RL_train_{unique_str}"
             cfg.wandb_params.id = f"RL_train_{unique_str}"
             cfg.wandb_params.group = "training"
-            cfg.wandb_params.tags = ["training", f"reward_{cfg.rl_params.reward_function}"]
+            cfg.wandb_params.tags = ["training", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
             # Optimizing the RL model
             cfg.rl_params.train_rl = True
             training_command = create_training_command(cfg)
@@ -112,7 +112,7 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.wandb_params.name = f"RL_eval_{unique_str}"
             cfg.wandb_params.id = f"RL_eval_{unique_str}"
             cfg.wandb_params.group = "evaluation"
-            cfg.wandb_params.tags = ["evaluation", f"reward_{cfg.rl_params.reward_function}"]
+            cfg.wandb_params.tags = ["evaluation", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
             # Skip optimizing the RL model
             cfg.rl_params.train_rl = False
             training_command = create_training_command(cfg)

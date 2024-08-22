@@ -31,6 +31,7 @@ optimization_params:
   lambda_dssim: 0.2
   densification_interval: 20
   opacity_reset_interval: 500
+  opacity_reset_interval: 500
   densify_from_iter: 20
   densify_until_iter: 1500
   densify_grad_threshold: 0.0002
