@@ -537,6 +537,13 @@ def prepare_output_and_logger(args, wandb_config, eval_output_path=None):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
+def create_wandb_config(args):
+    # Convert the args Namespace to a dictionary
+    args_dict = vars(args)
+    # Filter out excluded keys
+    wandb_config = {key: value for key, value in args_dict.items()}
+    
+    return wandb_config
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -574,17 +581,18 @@ if __name__ == "__main__":
     # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     # Example usage
-    wandb_config = wdbp.extract(args)
+    wandb_args = wdbp.extract(args)
     rlp_config = rlp.extract(args)
     lp_config = lp.extract(args)
     last_iteration = get_last_iteration(rlp_config.train_rl)
-    wandb_logger = WandBLogger(wandb_config, last_iteration)
+    wandb_config = create_wandb_config(args)
+    wandb_logger = WandBLogger(wandb_args, wandb_config, last_iteration)
     training(
         lp_config,
         op.extract(args),
         pp.extract(args),
         rlp_config,
-        wandb_config,
+        wandb_args,
         args.test_iterations,
         args.save_iterations,
         args.checkpoint_iterations,
