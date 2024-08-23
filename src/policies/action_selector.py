@@ -116,7 +116,7 @@ class GradNormThresholdSelector(ActionSelector):
 
 
 class ParamNetwork(nn.Module):
-    def __init__(self, input_size, hidden_size=128, output_size=4):
+    def __init__(self, input_size, hidden_size=128, output_size=3):
         super(ParamNetwork, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -140,7 +140,6 @@ class ParamNetwork(nn.Module):
         self.fc3.bias.data[0] = 2.0  # Increase bias for the first action
         self.fc3.bias.data[1] = -2.0  # Decrease bias for the second action
         self.fc3.bias.data[2] = -2.0  # Decrease bias for the third action
-        self.fc3.bias.data[3] = -2.0  # Decrease bias for the fourth action
     
     def forward(self, x):
         x = torch.relu(self.fc1(x))
@@ -158,7 +157,6 @@ class ParamBasedActionSelector(ActionSelector):
         grads[grads.isnan()] = 0.0
         grad_norms = torch.norm(grads, dim=-1, p=2)
         max_scalings = torch.max(gaussians.get_scaling, dim=1).values
-        num_points = gaussians.num_points
         opacities = gaussians.get_opacity.squeeze(-1)
         
         # Normalize the inputs
