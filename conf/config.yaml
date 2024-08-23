@@ -18,7 +18,7 @@ pipeline_params:
   debug: false
 
 optimization_params:
-  iterations: 150
+  iterations: 20000
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
   position_lr_delay_mult: 0.01
@@ -29,10 +29,10 @@ optimization_params:
   rotation_lr: 0.001
   percent_dense: 0.01
   lambda_dssim: 0.2
-  densification_interval: 20
-  opacity_reset_interval: 500
-  densify_from_iter: 20
-  densify_until_iter: 1100
+  densification_interval: 25
+  opacity_reset_interval: 3000
+  densify_from_iter: 25
+  densify_until_iter: 18000
   densify_grad_threshold: 0.0002
   random_background: false
 
@@ -42,13 +42,13 @@ eval_params:
   skip_metrics: false
   skip_eval: false
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 3
+  epochs: 200
   eval_frequency: 10
   
   
 script_params:
-  test_iterations: [1000]
-  save_iterations: [1000]
+  test_iterations: [1500, 7000]
+  save_iterations: [1500, 7000]
   checkpoint_iterations: []
   start_checkpoint: null
   meta_model: "meta_model.torch"
@@ -84,8 +84,9 @@ rl_params:
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
-  num_candidates: 4
+  num_candidates: 2
   hidden_size: 16
+  break_reward: -10.0
   reward_function: ["reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
  #TODO Make all rewards are gotten from rewards.py and then just the one used here used as real reward
  # Otherwhise slurm hydra sweep not working
@@ -95,7 +96,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 10
+    timeout_min: 720
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1

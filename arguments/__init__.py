@@ -108,6 +108,7 @@ class RLParams(ParamGroup):
         self.num_candidates = 2
         self.reward_function = ["reward_default"]
         self.hidden_size = 16
+        self.break_reward = -10.0
 
         super().__init__(parser, "RL Parameters")
 

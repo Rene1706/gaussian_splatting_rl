@@ -299,7 +299,7 @@ def training(
                         # Check each candidate and adjust reward if necessary
                         for i, gaussians in enumerate(gaussian_candidate_list):
                             if gaussians.num_points > 300000 or gaussians.num_points < 200:
-                                gaussian_selection_rewards[i] = -1  # Set reward to -1 for this candidate
+                                gaussian_selection_rewards[i] = rlp.break_reward  # Set reward to -1 for this candidate
 
                         # Iterate through each candidate and store individual entries
                         for candidate_idx in range(len(action_candidates)):
@@ -310,8 +310,10 @@ def training(
                             # Combine inputs and actions into a list of tuples
                             input_action_pairs = list(zip(inputs, actions))
 
-                            # Randomly select 50% of the input-action pairs
-                            sample_size = max(1, int(0.5 * len(input_action_pairs)))
+                            # Randomly select 100% of the input-action pairs
+                            # ? Problem if numppoints is very low after a while this will not fill the buffer
+                            # ? Therefore most of the time old values will be selected
+                            sample_size = max(1, int(1.0 * len(input_action_pairs)))
                             sampled_pairs = sample(input_action_pairs, sample_size)
 
                             # Iterate through the sampled pairs and store them in the replay buffer
@@ -324,7 +326,7 @@ def training(
                         with torch.enable_grad():
                             if (densification_counter) % 3 == 0 and rlp.train_rl or break_training:
                                 # Sample from the replay buffer
-                                sampled_inputs, sampled_actions, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.1 * replay_buffer.size())))
+                                sampled_inputs, sampled_actions, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.2 * replay_buffer.size())))
 
                                 # Get log probabilities for the sampled actions
                                 log_probs_tensor = action_selector.get_policy(sampled_inputs).log_prob(sampled_actions)
@@ -484,14 +486,11 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     gaussians.densify_and_clone_selected(clone_mask)
     gaussians.densify_and_split_selected(split_mask, N=N)
 
-    #print("PRUNE MASK ME: ", prune_mask.shape)
     #gaussians.select_and_prune_points(prune_mask)
+    # ? Pruning done after split, clone as otherwhise masks are not accurate anymore.
+    # ? Problem is that often cloned points are directly pruned afterwards
     n_pruned_points = gaussians.select_and_prune_points_old(min_opacity, max_screen_size, extent)
-    # Open the CSV file for appending
-    #with open("densifcation.csv", mode='a', newline='') as log_file:
-    #    writer = csv.writer(log_file)
-    #    writer.writerow([0, n_cloned_points, n_splitted_points, torch.sum(prune_mask), gaussians.num_points])
-    
+
     print(f"Cloned: {n_cloned_points}",
           f"Splitted: {n_splitted_points}",
           f"Pruned: {n_pruned_points}",
