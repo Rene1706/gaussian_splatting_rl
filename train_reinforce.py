@@ -179,7 +179,7 @@ def training(
     k = rlp.num_candidates if rlp.train_rl else 1
 
     # Initilize RL agent objects
-    action_selector = ParamBasedActionSelector(k=k).to("cuda")
+    action_selector = ParamBasedActionSelector(k=k, hidden_size=rlp.hidden_size).to("cuda")
     policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
     #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
     #lr_scheduler = ExponentialLR(policy_optimizer, gamma=0.98)

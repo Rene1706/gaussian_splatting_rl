@@ -85,6 +85,7 @@ rl_params:
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
   num_candidates: 4
+  hidden_size: 16
   reward_function: ["reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
  #TODO Make all rewards are gotten from rewards.py and then just the one used here used as real reward
  # Otherwhise slurm hydra sweep not working
