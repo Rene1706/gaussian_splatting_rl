@@ -476,6 +476,7 @@ class GaussianModel:
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
+        return len(prune_mask)
 
     # RENE: Changing this to using prune mask kills train.py script
     def select_and_prune_points(self, prune_mask):
