@@ -99,8 +99,8 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, train_dataset)
             cfg.wandb_params.name = f"RL_train_{unique_str}"
             cfg.wandb_params.id = f"RL_train_{unique_str}"
-            cfg.wandb_params.group = "training"
-            cfg.wandb_params.tags = ["training", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+            cfg.wandb_params.group = "default_pruning"
+            cfg.wandb_params.tags = ["training", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
             # Optimizing the RL model
             cfg.rl_params.train_rl = True
             training_command = create_training_command(cfg)
@@ -111,32 +111,12 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, eval_dataset)
             cfg.wandb_params.name = f"RL_eval_{unique_str}"
             cfg.wandb_params.id = f"RL_eval_{unique_str}"
-            cfg.wandb_params.group = "evaluation"
-            cfg.wandb_params.tags = ["evaluation", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+            cfg.wandb_params.group = "default_pruning"
+            cfg.wandb_params.tags = ["evaluation", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
             # Skip optimizing the RL model
             cfg.rl_params.train_rl = False
             training_command = create_training_command(cfg)
             run_command(training_command, env=os.environ.copy())
-
-        # Evaluation
-        #if not cfg.eval_params.skip_rendering or not cfg.eval_params.skip_metrics:
-        #    cfg.model_params.source_path = os.path.join(cfg.eval_params.data_path, eval_dataset)
-        #    cfg.model_params.model_path = os.path.join(output_path, f"eval_{eval_dataset}")
-
-            #if not cfg.eval_params.skip_rendering:
-                #rendering_command = f"python render.py --model_path {cfg.model_params._model_path}"
-                #run_command(rendering_command)
-            
-            #if not cfg.eval_params.skip_metrics:
-                #metrics_command = f"python metrics.py --model_path {cfg.model_params._model_path}"
-                #run_command(metrics_command)
-
-                # Log metrics (this assumes metrics.py produces a JSON file with metrics)
-                #metrics_file = os.path.join(cfg.model_params._model_path, "metrics.json")
-                #with open(metrics_file) as f:
-                #    metrics = json.load(f)
-                #    wandb.log(metrics)
-                #wandb.finish()
 
 
 @hydra.main(config_path="conf", config_name="config")
