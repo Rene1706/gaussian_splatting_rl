@@ -302,7 +302,7 @@ class GaussianModel:
         return optimizable_tensors
 
     def prune_points(self, prune_mask: torch.Tensor):
-        # print(f"Number of pruned points {torch.sum(prune_mask)}")
+        # print(f"Number of pruned points {torch.sum(prune_mask).item()}")
         valid_points_mask = ~prune_mask
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
 
@@ -476,6 +476,7 @@ class GaussianModel:
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
+        return torch.sum(prune_mask).item()
 
     # RENE: Changing this to using prune mask kills train.py script
     def select_and_prune_points(self, prune_mask):
