@@ -167,7 +167,7 @@ def training(
 
     # Only use one candidate for evaluation optimization run
     k = rlp.num_candidates if rlp.train_rl else 1
-    action_selector = ParamBasedActionSelector(k=k).to("cuda")
+    action_selector = ParamBasedActionSelector(k=k, hidden_size=rlp.hidden_size).to("cuda")
     policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
     #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
     # Load RL meta model and optimizer
@@ -285,7 +285,7 @@ def training(
                         # Check each candidate and adjust reward if necessary
                         for i, gaussians in enumerate(gaussian_candidate_list):
                             if gaussians.num_points > 300000 or gaussians.num_points < 200:
-                                gaussian_selection_rewards[i] = torch.tensor(-1.0, device="cuda")  # Set reward to -1 for this candidate
+                                gaussian_selection_rewards[i] = torch.tensor(rlp.break_reward, device="cuda")  # Set reward to -1 for this candidate
                         # Update meta policy
                         if rlp.train_rl:
                             with torch.enable_grad():

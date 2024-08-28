@@ -96,7 +96,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 720
+    timeout_min: 180
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1

@@ -116,7 +116,7 @@ class GradNormThresholdSelector(ActionSelector):
 
 
 class ParamNetwork(nn.Module):
-    def __init__(self, input_size, hidden_size=128, output_size=3):
+    def __init__(self, input_size, hidden_size=16, output_size=3):
         super(ParamNetwork, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -148,7 +148,7 @@ class ParamNetwork(nn.Module):
         return x
 
 class ParamBasedActionSelector(ActionSelector):
-    def __init__(self, input_size=3, k=2, hidden_size=128):
+    def __init__(self, input_size=3, k=2, hidden_size=16):
         super().__init__(k=k)
         self.param_network = ParamNetwork(input_size, hidden_size)
 

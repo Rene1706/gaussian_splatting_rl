@@ -46,35 +46,37 @@ def get_datasets(data_path):
     return datasets
 
 
-def run_command(command, env=None):
+def run_command(command, env=None, timeout=7200):  # Timeout set to 2 hours (7200 seconds)
     print(f"Executing: {command}")
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # Could also do this
+    #process = subprocess.Popen(command, shell=True, stdout=stdout_file, stderr=stderr_file)
+    #process.wait()  # Wait for the process to finish
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = process.communicate()
+        print(f"Command timed out: {command}", file=sys.stderr)
+        raise RuntimeError(f"Command timed out after {timeout} seconds")
 
-    stdout_lines = []
-    stderr_lines = []
+    print(stdout)
+    if stderr:
+        print(stderr, file=sys.stderr)
 
-    while True:
-        stdout_output = process.stdout.readline()
-        stderr_output = process.stderr.readline()
-
-        if stdout_output == '' and stderr_output == '' and process.poll() is not None:
-            break
-
-        if stdout_output:
-            print(stdout_output.strip())
-            stdout_lines.append(stdout_output.strip())
-
-        if stderr_output:
-            print(stderr_output.strip(), file=sys.stderr)
-            stderr_lines.append(stderr_output.strip())
-
-    # Check for errors
-    process.wait()
     if process.returncode != 0:
         print("Error output:")
-        for line in stderr_lines:
-            print(line, file=sys.stderr)
+        print(stderr, file=sys.stderr)
         raise RuntimeError(f"Command failed with return code {process.returncode}: {command}")
+"""
+def run_command(command):
+    with open('output.log', 'w') as stdout_file, open('error.log', 'w') as stderr_file:
+        process = subprocess.Popen(command, shell=True, stdout=stdout_file, stderr=stderr_file)
+        process.wait()  # Wait for the process to finish
+
+        if process.returncode != 0:
+            raise RuntimeError(f"Command failed with return code {process.returncode}")
+"""
 
 def train_and_evaluate(cfg, datasets, output_path):
     # Create log directory for this full evaluation run
@@ -100,11 +102,11 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.wandb_params.name = f"RL_train_{unique_str}"
             cfg.wandb_params.id = f"RL_train_{unique_str}"
             cfg.wandb_params.group = "default_pruning"
-            cfg.wandb_params.tags = ["training", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+            cfg.wandb_params.tags = ["training", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "no_buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
             # Optimizing the RL model
             cfg.rl_params.train_rl = True
             training_command = create_training_command(cfg)
-            run_command(training_command, env=os.environ.copy())
+            run_command(training_command)
 
         # Optimization with RL model without learning
         if not cfg.eval_params.skip_eval and epoch % cfg.eval_params.eval_frequency == 0:
@@ -112,11 +114,11 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.wandb_params.name = f"RL_eval_{unique_str}"
             cfg.wandb_params.id = f"RL_eval_{unique_str}"
             cfg.wandb_params.group = "default_pruning"
-            cfg.wandb_params.tags = ["evaluation", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+            cfg.wandb_params.tags = ["evaluation", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "no_buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
             # Skip optimizing the RL model
             cfg.rl_params.train_rl = False
             training_command = create_training_command(cfg)
-            run_command(training_command, env=os.environ.copy())
+            run_command(training_command)
 
 
 @hydra.main(config_path="conf", config_name="config")
