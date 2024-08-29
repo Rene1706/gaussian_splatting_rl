@@ -31,7 +31,6 @@ optimization_params:
   lambda_dssim: 0.2
   densification_interval: 20
   opacity_reset_interval: 500
-  opacity_reset_interval: 500
   densify_from_iter: 20
   densify_until_iter: 1500
   densify_grad_threshold: 0.0002
@@ -43,7 +42,7 @@ eval_params:
   skip_metrics: false
   skip_eval: false
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 200
+  epochs: 10
   eval_frequency: 5
   
   
@@ -95,7 +94,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 720
+    timeout_min: 30
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1

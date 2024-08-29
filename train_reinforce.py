@@ -285,7 +285,7 @@ def training(
                         # Check each candidate and adjust reward if necessary
                         for i, gaussians in enumerate(gaussian_candidate_list):
                             if gaussians.num_points > 300000 or gaussians.num_points < 200:
-                                gaussian_selection_rewards[i] = torch.tensor(-1.0, device="cuda")  # Set reward to -1 for this candidate
+                                gaussian_selection_rewards[i] = torch.tensor(-10.0, device="cuda")  # Set reward to -1 for this candidate
                         # Update meta policy
                         if rlp.train_rl:
                             with torch.enable_grad():
