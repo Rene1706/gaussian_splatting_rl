@@ -117,6 +117,8 @@ def training(
 ):
     first_iter = 0
     last_iter = 0
+    last_iter_psnr = 0
+    delta_gaussians = 0
     # Get reward function to be used
     reward_function_name = rlp.reward_function
     print("Reward function used: ", reward_function_name)
@@ -161,6 +163,8 @@ def training(
     gaussian_candidate_list = [init_gaussians]
     del init_gaussians
     gaussian_selection_rewards = [0]
+    gaussians_delta = [0]
+    gaussian_selection_psnr = [0]
     log_probability_candidates = None  # None for first iteration, as we have no log_probability_candidates
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
@@ -191,11 +195,14 @@ def training(
             gaussians_best_idx = torch.stack(gaussian_selection_rewards).argmax()
             #print(f"Rewards: {gaussian_selection_rewards}, idx: {gaussians_best_idx}")
             gaussians = gaussian_candidate_list[gaussians_best_idx]
+            last_iter_psnr = gaussian_selection_psnr[gaussians_best_idx]
             scene.gaussians = gaussians
             gaussian_candidate_list.clear()
             gaussian_selection_rewards.clear()
+            gaussian_selection_psnr.clear()
             gaussian_candidate_list.append(gaussians)
             gaussian_selection_rewards.append(0)
+            gaussian_selection_psnr.append(0)
             candidates_created = opt.iterations + 1  # Do not do this again
 
         # Actual training start
@@ -244,7 +251,14 @@ def training(
 
             # TODO: Calculate better reward for gaussian selection
             psnr_value = psnr(image, gt_image)
-            reward = reward_function(loss, psnr_value, gaussians)
+            gaussian_selection_psnr[i] = psnr_value.mean().item()
+            reward = reward_function(loss=loss,
+                                     psnr=psnr_value,
+                                     last_psnr=last_iter_psnr,
+                                     delta_gaussians=gaussians_delta[i],
+                                     gaussians=gaussians,
+                                     iteration=iteration,
+                                     rl_params=rlp)
             gaussian_selection_rewards[i] = reward
 
             # Calculate and log additional rewards
@@ -317,6 +331,7 @@ def training(
                     gaussians_best_idx = torch.stack(gaussian_selection_rewards).argmax()
                     #print(f"Rewards: {gaussian_selection_rewards}, idx: {gaussians_best_idx}")
                     gaussians = gaussian_candidate_list[gaussians_best_idx]
+                    last_iter_psnr = gaussian_selection_psnr[gaussians_best_idx]
                     scene.gaussians = gaussians
                     size_threshold = (
                         20 if iteration > opt.opacity_reset_interval else None
@@ -332,15 +347,20 @@ def training(
 
                     gaussian_candidate_list.clear()
                     gaussian_selection_rewards.clear()
-                    if iteration % 200 == 0:
+                    gaussian_selection_psnr.clear()
+                    gaussians_delta.clear()
+                    if iteration % 5000 == 0:
                         wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
                     for i, actions in enumerate(action_candidates):
                         gaussian_clone = deepcopy(gaussians)
                         visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
                         n_cloned, n_splitted, n_pruned, n_gaussians, n_noop = apply_actions(gaussian_clone, actions, 0.005, size_threshold, scene.cameras_extent)
+                        delta_gaussians = n_cloned + n_splitted - n_pruned
+                        gaussians_delta.append(delta_gaussians)
                         wandb_logger.log_densification_step(iteration, i, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop)
                         gaussian_candidate_list.append(gaussian_clone)
                         gaussian_selection_rewards.append(0)
+                        gaussian_selection_psnr.append(0)
 
                     candidates_created = iteration
 
