@@ -17,18 +17,18 @@ class WandBLogger:
         #print(filtered_wandb_args)
         wandb.init(**filtered_wandb_args, config=wandb_config)
         self.wandb_args = wandb_args
-        self.image_interval = 200
+        self.image_interval = 1000
         self.last_iteration = last_iteration
 
     def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, ssim_value, loss, reward, image, gt_image, additional_rewards):
         iteration += self.last_iteration  # Adjust the iteration number
-
-        log_data = {
-            f'train_iter/candidate_{candidate_index}/l1_loss': Ll1.item(),
-            f'train_iter/candidate_{candidate_index}/loss': loss.item(),
-            f'train_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
-            f'train_iter/candidate_{candidate_index}/reward': reward,
-        }
+        if candidate_index == 0:
+            log_data = {
+                f'train_iter/candidate_{candidate_index}/l1_loss': Ll1.item(),
+                f'train_iter/candidate_{candidate_index}/loss': loss.item(),
+                f'train_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
+                f'train_iter/candidate_{candidate_index}/reward': reward,
+            }
         
         # Log additional rewards if provided
         if additional_rewards:
@@ -38,10 +38,10 @@ class WandBLogger:
             wandb.log(log_data, step=iteration)
         
         # Log these metrics at intervals specified by self.image_interval
-        if iteration % self.image_interval == 0:
+        if (iteration % self.image_interval == 0) and (candidate_index == 0):
             wandb.log({
-                f'train_iter/candidate_{candidate_index}/opacities': wandb.Histogram(gaussians.get_opacity.detach().cpu().numpy()),
-                f'train_iter/candidate_{candidate_index}/scaling_max': wandb.Histogram(gaussians.get_scaling.detach().max(dim=1).values.cpu().numpy()),
+                #f'train_iter/candidate_{candidate_index}/opacities': wandb.Histogram(gaussians.get_opacity.detach().cpu().numpy()),
+                #f'train_iter/candidate_{candidate_index}/scaling_max': wandb.Histogram(gaussians.get_scaling.detach().max(dim=1).values.cpu().numpy()),
                 f'train_iter/candidate_{candidate_index}/gt_image': [wandb.Image(gt_image, caption="Ground Truth")],
                 f'train_iter/candidate_{candidate_index}/pred_image': [wandb.Image(image, caption="Prediction")]
             }, step=iteration)

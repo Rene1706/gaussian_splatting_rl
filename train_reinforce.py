@@ -383,7 +383,7 @@ def training(
 
                     gaussian_candidate_list.clear()
                     gaussian_selection_rewards.clear()
-                    if iteration % 200 == 0:
+                    if iteration % 5000 == 0:
                         wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
                     for i, actions in enumerate(action_candidates):
                         gaussian_clone = deepcopy(gaussians)

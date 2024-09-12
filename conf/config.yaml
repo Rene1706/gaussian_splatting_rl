@@ -18,7 +18,7 @@ pipeline_params:
   debug: false
 
 optimization_params:
-  iterations: 20000
+  iterations: 25000
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
   position_lr_delay_mult: 0.01
@@ -29,10 +29,10 @@ optimization_params:
   rotation_lr: 0.001
   percent_dense: 0.01
   lambda_dssim: 0.2
-  densification_interval: 25
+  densification_interval: 100
   opacity_reset_interval: 3000
-  densify_from_iter: 25
-  densify_until_iter: 18000
+  densify_from_iter: 100
+  densify_until_iter: 24000
   densify_grad_threshold: 0.0002
   random_background: false
 
@@ -42,13 +42,13 @@ eval_params:
   skip_metrics: false
   skip_eval: false
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 200
-  eval_frequency: 10
+  epochs: 600
+  eval_frequency: 700
   
   
 script_params:
-  test_iterations: [1500, 7000]
-  save_iterations: [1500, 7000]
+  test_iterations: [5000, 25000]
+  save_iterations: [5000, 25000]
   checkpoint_iterations: []
   start_checkpoint: null
   meta_model: "meta_model.torch"
@@ -84,9 +84,14 @@ rl_params:
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
-  num_candidates: 2
+  num_candidates: 4
   hidden_size: 16
   break_reward: -10.0
+  complexity_penalty: 0.001
+  psnr_weight: 1.0
+  late_reward_bonus: 0.00001
+  increase_bias: 2.0
+  decrease_bias: -2.0
   reward_function: ["reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
  #TODO Make all rewards are gotten from rewards.py and then just the one used here used as real reward
  # Otherwhise slurm hydra sweep not working
@@ -106,7 +111,11 @@ hydra:
         - module load Miniconda3
         - module load GCC/11.2.0
         - module load CUDA/12.3.0
-        - export PYTHONPATH=$PYTHONPATH:/bigwork/nhmlhuer/git/backup/gaussian_splatting_rl/src/
+        - export PYTHONPATH=$PYTHONPATH:/bigwork/nhmlhuer/git/gaussian_splatting_rl/src/
         - source activate rl_cloned
+    additional_parameters:
+    # SLURM specific options
+      mail-user: rene.huertgen@stud.uni-hannover.de
+      mail-type: BEGIN,END,FAIL
 
 training_script: "train_reinforce.py"
