@@ -46,27 +46,28 @@ def get_datasets(data_path):
     return datasets
 
 
-def run_command(command, env=None):
+def run_command(command, env=None, timeout=7200):  # Timeout set to 2 hours (7200 seconds)
     print(f"Executing: {command}")
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # Could also do this
+    #process = subprocess.Popen(command, shell=True, stdout=stdout_file, stderr=stderr_file)
+    #process.wait()  # Wait for the process to finish
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = process.communicate()
+        print(f"Command timed out: {command}", file=sys.stderr)
+        raise RuntimeError(f"Command timed out after {timeout} seconds")
 
-    stdout_lines = []
-    stderr_lines = []
+    print(stdout)
+    if stderr:
+        print(stderr, file=sys.stderr)
 
-    while True:
-        stdout_output = process.stdout.readline()
-        stderr_output = process.stderr.readline()
-
-        if stdout_output == '' and stderr_output == '' and process.poll() is not None:
-            break
-
-        if stdout_output:
-            print(stdout_output.strip())
-            stdout_lines.append(stdout_output.strip())
-
-        if stderr_output:
-            print(stderr_output.strip(), file=sys.stderr)
-            stderr_lines.append(stderr_output.strip())
+    if process.returncode != 0:
+        print("Error output:")
+        print(stderr, file=sys.stderr)
+        raise RuntimeError(f"Command failed with return code {process.returncode}: {command}")
 
     # Check for errors
     process.wait()
