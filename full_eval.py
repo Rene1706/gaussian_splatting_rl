@@ -32,10 +32,11 @@ def create_training_command(cfg) -> str:
                 command += f" {prefix}--{key} {value}"
 
     # Add model_params, pipeline_params, and optimization_params to the command
+    if cfg.rl_params.train_rl:
+        add_params(cfg.optimization_params)
+        add_params(cfg.pipeline_params)
+        add_params(cfg.script_params)
     add_params(cfg.model_params)
-    add_params(cfg.pipeline_params)
-    add_params(cfg.optimization_params)
-    add_params(cfg.script_params)
     add_params(cfg.wandb_params)
     add_params(cfg.rl_params)
 
@@ -68,14 +69,15 @@ def run_command(command, env=None, timeout=7200):  # Timeout set to 2 hours (720
         print("Error output:")
         print(stderr, file=sys.stderr)
         raise RuntimeError(f"Command failed with return code {process.returncode}: {command}")
+"""
+def run_command(command):
+    with open('output.log', 'w') as stdout_file, open('error.log', 'w') as stderr_file:
+        process = subprocess.Popen(command, shell=True, stdout=stdout_file, stderr=stderr_file)
+        process.wait()  # Wait for the process to finish
 
-    # Check for errors
-    process.wait()
-    if process.returncode != 0:
-        print("Error output:")
-        for line in stderr_lines:
-            print(line, file=sys.stderr)
-        raise RuntimeError(f"Command failed with return code {process.returncode}: {command}")
+        if process.returncode != 0:
+            raise RuntimeError(f"Command failed with return code {process.returncode}")
+"""
 
 def train_and_evaluate(cfg, datasets, output_path):
     # Create log directory for this full evaluation run
@@ -101,24 +103,41 @@ def train_and_evaluate(cfg, datasets, output_path):
             cfg.wandb_params.name = f"RL_train_{unique_str}"
             cfg.wandb_params.id = f"RL_train_{unique_str}"
             cfg.wandb_params.group = "default_pruning"
-            cfg.wandb_params.tags = ["training", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+            cfg.wandb_params.tags = ["training", "default_pruning", "ppo", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
             # Optimizing the RL model
             cfg.rl_params.train_rl = True
             training_command = create_training_command(cfg)
-            run_command(training_command, env=os.environ.copy())
+            run_command(training_command)
 
         # Optimization with RL model without learning
         if not cfg.eval_params.skip_eval and epoch % cfg.eval_params.eval_frequency == 0:
-            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, eval_dataset)
+            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, "01Gorilla")#eval_dataset)
             cfg.wandb_params.name = f"RL_eval_{unique_str}"
+            cfg.wandb_params.resume = "never"
             cfg.wandb_params.id = f"RL_eval_{unique_str}"
             cfg.wandb_params.group = "default_pruning"
-            cfg.wandb_params.tags = ["evaluation", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+            add_eval_tags(cfg)            
             # Skip optimizing the RL model
             cfg.rl_params.train_rl = False
             training_command = create_training_command(cfg)
-            run_command(training_command, env=os.environ.copy())
+            run_command(training_command)
 
+def add_eval_tags(cfg):
+    # Add tags for evaluation
+    cfg.wandb_params.tags = ["evaluation", "default_pruning", "ppo","buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+    if cfg.rl_params.meta_model:
+        path = os.path.dirname(cfg.rl_params.meta_model)
+        overrides_folder = os.path.join(path, ".hydra")
+        if os.path.exists(overrides_folder):
+            with open(os.path.join(overrides_folder, "overrides.yaml")) as f:
+                model_params = f.read().splitlines()
+                for line in model_params:
+                    tag = line.split("=")[0].split(".")[1]
+                    value = line.split("=")[1]
+                    cfg.wandb_params.tags.append(f"{tag}_{value}")
+                    if tag == "reward_function":
+                        print("Setting reward function from override")
+                        cfg.rl_params.reward_function = [value.strip('[]')]
 
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):

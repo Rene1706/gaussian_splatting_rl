@@ -168,7 +168,7 @@ class ParamBasedActionSelector(ActionSelector):
         opacities = gaussians.get_opacity.squeeze(-1)
         
         # Normalize the inputs
-        #grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
+        grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
         max_scalings = (max_scalings - max_scalings.mean()) / (max_scalings.std() + 1e-8)
         opacities = (opacities - opacities.mean()) / (opacities.std() + 1e-8)
 
@@ -184,4 +184,6 @@ class ParamBasedActionSelector(ActionSelector):
         
         # Sample k action candidates using the policy distribution
         actions = policy.sample((self.k,)).to("cuda")
-        return actions, inputs
+        log_probs = policy.log_prob(actions).to("cuda")
+
+        return actions, inputs, log_probs

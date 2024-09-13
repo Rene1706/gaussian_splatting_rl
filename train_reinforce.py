@@ -16,7 +16,6 @@ from copy import deepcopy
 from pathlib import Path
 from random import randint, sample
 
-import matplotlib.pyplot as plt
 import torch
 from torch.optim.lr_scheduler import StepLR, ExponentialLR
 from tqdm import tqdm
@@ -117,9 +116,11 @@ def training(
         eval_output_path=None
 ):
     # Initialize a buffer for storing (log_probs, reward) pairs
-    max_buffer_size = 1000000  # Buffer can hold up to 1,000,000 log_probs
+    max_buffer_size = 500000  # Buffer can hold up to 1,000,000 log_probs
     # Initialize buffers for storing log_probs and rewards
     replay_buffer = ReplayBuffer(max_buffer_size)
+    # Load the replay buffer if it exists
+    replay_buffer.load("replay_buffer.pth")
     
     densification_counter = 0
 
@@ -319,21 +320,22 @@ def training(
                         # Iterate through each candidate and store individual entries
                         for candidate_idx in range(len(action_candidates)):
                             actions = action_candidates[candidate_idx]  # Shape [100000]
+                            old_log_probs = log_probability_candidates[candidate_idx]  # Shape [100000]
                             reward = gaussian_selection_rewards[candidate_idx]  # Scalar
                             inputs = inputs_candidates  # Shape [100000, 3]
 
                             # Combine inputs and actions into a list of tuples
-                            input_action_pairs = list(zip(inputs, actions))
+                            input_action_pairs = list(zip(inputs, actions, old_log_probs))
 
-                            # Randomly select 100% of the input-action pairs
+                            # Randomly select 25% of the input-action pairs
                             # ? Problem if numppoints is very low after a while this will not fill the buffer
                             # ? Therefore most of the time old values will be selected
-                            sample_size = max(1, int(1.0 * len(input_action_pairs)))
+                            sample_size = max(1, int(0.25 * len(input_action_pairs)))
                             sampled_pairs = sample(input_action_pairs, sample_size)
 
                             # Iterate through the sampled pairs and store them in the replay buffer
-                            for input, action in sampled_pairs:
-                                replay_buffer.add(input, action, reward)
+                            for input, action, old_log_prob in sampled_pairs:
+                                replay_buffer.add(input, action, old_log_prob, reward)
 
 
                         break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 200 for gaussian in gaussian_candidate_list)
@@ -341,35 +343,14 @@ def training(
                         with torch.enable_grad():
                             if (densification_counter) % 3 == 0 and rlp.train_rl or break_training:
                                 # Sample from the replay buffer
-                                sampled_inputs, sampled_actions, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.2 * replay_buffer.size())))
+                                sampled_inputs, sampled_actions, sampled_old_log_probs, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.3 * replay_buffer.size())))
 
-                                # Get log probabilities for the sampled actions
-                                log_probs_tensor = action_selector.get_policy(sampled_inputs).log_prob(sampled_actions)
-                                assert log_probs_tensor.requires_grad, "Log_probs_tensor does not require gradients!"
-
-                                # Normalize rewards (or calculate advantages if needed)
-                                advantages_tensor = (sampled_rewards - sampled_rewards.mean()) / (sampled_rewards.std() + 1e-8)
-                                advantages_tensor = advantages_tensor.to(log_probs_tensor.device)
-                                print("Advantages_tensor: ", advantages_tensor.shape)
-                                print("Log_probs_tensor: ", log_probs_tensor.shape)
-
-                                # Update the policy network using the saved advantages
-                                policy_optimizer.zero_grad()
-                                loss = -torch.mean(log_probs_tensor * advantages_tensor)
-                                print("Loss: ", loss)
-
-                                # Perform backpropagation and optimization
-                                loss.backward(retain_graph=False)
-                                policy_optimizer.step()
-                                #lr_scheduler.step()
-                                print("!!Policy optimizer step done!!")
-
-                                # Optionally, remove the sampled entries from the replay buffer
-                                #replay_buffer.remove(sampled_inputs, sampled_actions, sampled_rewards)
-                                print(f"Buffer size: {replay_buffer.size()}")
-
-                            # Optionally log RL loss, if needed
-                            # wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
+                                # PPO update
+                                ppo_loss = ppo_update(action_selector, policy_optimizer, sampled_inputs, sampled_actions, sampled_rewards, sampled_old_log_probs)
+                                print("PPO loss:", ppo_loss)
+                                print("Buffer size: ", replay_buffer.size())
+                                # Optionally log RL loss, if needed
+                                wandb_logger.log_rl_loss(iteration, ppo_loss, 0, policy_optimizer)
 
                         if break_training:
                             print(f"\nNumber of gaussians is outside the range. Optimizing action selector and stopping.")
@@ -391,7 +372,7 @@ def training(
 
                     # Sample actions and create new candidates
                     with torch.enable_grad():
-                        action_candidates, inputs_candidates = action_selector(
+                        action_candidates, inputs_candidates, log_probability_candidates = action_selector(
                             gaussians,
                             iteration=iteration,
                             scene_extent=scene.cameras_extent
@@ -401,11 +382,11 @@ def training(
                     gaussian_selection_rewards.clear()
                     gaussian_selection_psnr.clear()
                     gaussians_delta.clear()
-                    if iteration % 5000 == 0:
+                    if iteration % 5000 == 0 and not rlp.train_rl:
                         wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
                     for i, actions in enumerate(action_candidates):
                         gaussian_clone = deepcopy(gaussians)
-                        visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
+                        #visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
                         n_cloned, n_splitted, n_pruned, n_gaussians, n_noop = apply_actions(gaussian_clone, actions, 0.005, size_threshold, scene.cameras_extent)
                         delta_gaussians = n_cloned + n_splitted - n_pruned
                         gaussians_delta.append(delta_gaussians)
@@ -448,6 +429,7 @@ def training(
     if rlp.meta_model and rlp.train_rl:
         lr_scheduler = None
         save_model_optimizer_scheduler(rlp.meta_model, rlp.optimizer, rlp.lr_scheduler, action_selector, policy_optimizer, lr_scheduler)
+        replay_buffer.save("replay_buffer.pth")
     # Save iterations so logging can be done in one run
     save_last_iteration(rlp.train_rl, last_iter)
 
@@ -556,6 +538,37 @@ def create_wandb_config(args):
     wandb_config = {key: value for key, value in args_dict.items()}
     
     return wandb_config
+
+def ppo_update(policy_net, optimizer, sampled_inputs, sampled_actions, sampled_rewards, sampled_log_probs, clip_param=0.2):
+    # Get new log probabilities from the current policy
+    new_policy = policy_net.get_policy(sampled_inputs)
+    new_log_probs = new_policy.log_prob(sampled_actions)
+
+    # Calculate the mean reward as the baseline
+    baseline = sampled_rewards.mean()
+
+    # Compute advantages using the mean reward as the baseline
+    advantages = sampled_rewards - baseline  # Simplified advantage calculation
+
+    # Normalize advantages for stability
+    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+    # Compute the ratio of new and old probabilities
+    ratio = torch.exp(new_log_probs - sampled_log_probs)
+
+    # Clipped loss for PPO
+    surr1 = ratio * advantages
+    surr2 = torch.clamp(ratio, 1.0 - clip_param, 1.0 + clip_param) * advantages
+    policy_loss = -torch.min(surr1, surr2).mean()
+
+    # Total loss (PPO policy loss only)
+    loss = policy_loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    return loss
 
 if __name__ == "__main__":
     # Set up command line argument parser
