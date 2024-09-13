@@ -31,6 +31,7 @@ from scene import Scene
 from utils.general_utils import safe_state
 from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
+from utils.reward_utils import exponential_moving_average
 from utils.image_utils import psnr
 import seaborn as sns
 from loggers import WandBLogger
@@ -268,7 +269,8 @@ def training(
 
             # TODO: Calculate better reward for gaussian selection
             psnr_value = psnr(image, gt_image)
-            gaussian_selection_psnr[i] = psnr_value.mean().item()
+            # Update gaussian_selection_psnr[i] with the exponential moving average
+            gaussian_selection_psnr[i] = exponential_moving_average(gaussian_selection_psnr[i], psnr_value.mean().item())
             reward = reward_function(loss=loss,
                                      psnr=psnr_value,
                                      last_psnr=last_iter_psnr,
