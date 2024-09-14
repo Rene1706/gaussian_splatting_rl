@@ -40,7 +40,7 @@ def reward_psnr_normalized(**kwargs):
     psnr = kwargs.get('psnr')
     if isinstance(psnr, torch.Tensor):
         psnr = psnr.mean().item()
-    reward = min(max(psnr / 50.0, 0), 1)
+    reward = min(max(psnr / 40.0, 0), 1)
     return torch.tensor(reward, device="cuda")
 
 def reward_psnr_normalized_2(**kwargs):
@@ -48,7 +48,7 @@ def reward_psnr_normalized_2(**kwargs):
     gaussians = kwargs.get('gaussians')
     if isinstance(psnr, torch.Tensor):
         psnr = psnr.mean().item()
-    reward = min(max(psnr / 50.0, 0), 1)
+    reward = min(max(psnr / 40.0, 0), 1)
     reward = reward / gaussians.num_points
     return torch.tensor(reward, device="cuda")
 
@@ -57,7 +57,7 @@ def reward_psnr_normalized_log_num_gauss(**kwargs):
     gaussians = kwargs.get('gaussians')
     if isinstance(psnr, torch.Tensor):
         psnr = psnr.mean().item()
-    reward = min(max(psnr / 45.0, 10), 1)
+    reward = min(max(psnr / 40.0, 0), 1)
     if gaussians.num_points <= 1:
         reward = -10.0
     else:
@@ -92,18 +92,56 @@ def reward_diff_psnr(**kwargs):
     # Normalize or log-scale the Gaussian count change to prevent excessive penalties
     # Use absolute value for logarithmic scaling to avoid math domain errors
     gaussian_count_change_normalized = math.log(1 + abs(delta_gaussians))
-
+    print("PSNR_DIFF: ", psnr_diff)
+    print("PSNR: ", psnr.mean().item())
+    print("LAST_PSNR", last_psnr)
     # Apply penalty or bonus based on whether gaussians were added or removed
     if delta_gaussians > 0:
         complexity_penalty = rl_params.complexity_penalty * gaussian_count_change_normalized  # Adding Gaussians, penalize
     else:
-        complexity_penalty = -rl_params.complexity_penalty * gaussian_count_change_normalized  # Removing Gaussians, potentially reward or reduce penalty
+        # Setting to 0 to avoid big reward when pruning is done
+        complexity_penalty = 0  # Removing Gaussians, potentially reward or reduce penalty
     
     #print(f"Complexity Penalty: {complexity_penalty}")
     # Adaptive reward scaling: increase reward for later iterations to handle diminishing PSNR changes
     if False:
         psnr_diff *= (1 + rl_params.late_reward_bonus * iteration)
     
-    reward = psnr_diff - complexity_penalty
+    reward = (rl_params.psnr_weight * psnr_diff) - complexity_penalty
     #print("Reward: ", reward)
     return torch.tensor(reward, dtype=torch.float32, device="cuda")
+
+def reward_diff_psnr_relative(**kwargs):
+    # Get the arguments
+    psnr = kwargs.get('psnr')
+    gaussians = kwargs.get('gaussians')
+    last_psnr = kwargs.get('last_psnr')
+    delta_gaussians = kwargs.get('delta_gaussians')
+    gaussians = kwargs.get('gaussians')
+    rl_params = kwargs.get('rl_params')
+    iteration = kwargs.get('iteration')
+    # Calculate the reward
+    psnr_diff = psnr.mean().item() - last_psnr
+    #print(f"PSNR: {psnr.mean().item()}, Last PSNR: {last_psnr}, PSNR Diff: {psnr_diff}")
+    # Complexity penalty
+    relative_delta_gaussians = delta_gaussians / gaussians.num_points
+
+    # Multiply by 10 to bring into same scale as reward_diff_psnr for sweep
+    relative_delta_gaussians = relative_delta_gaussians * 100
+    #print("PSNR_DIFF: ", psnr_diff)
+    #print("Relative Delta Gaussians: ", relative_delta_gaussians)
+    # Apply penalty or bonus based on whether gaussians were added or removed
+    if delta_gaussians > 0:
+        complexity_penalty = rl_params.complexity_penalty * relative_delta_gaussians  # Adding Gaussians, penalize
+    else:
+        complexity_penalty = 0  # Removing Gaussians, potentially reward or reduce penalty
+    
+    #print(f"Complexity Penalty: {complexity_penalty}")
+    # Adaptive reward scaling: increase reward for later iterations to handle diminishing PSNR changes
+    if False:
+        psnr_diff *= (1 + rl_params.late_reward_bonus * iteration)
+    
+    reward = (rl_params.psnr_weight * psnr_diff) - complexity_penalty
+    #print("Reward: ", reward)
+    return torch.tensor(reward, dtype=torch.float32, device="cuda")
+
