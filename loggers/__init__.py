@@ -17,7 +17,7 @@ class WandBLogger:
         #print(filtered_wandb_args)
         wandb.init(**filtered_wandb_args, config=wandb_config)
         self.wandb_args = wandb_args
-        self.image_interval = 1000
+        self.image_interval = 5000
         self.last_iteration = last_iteration
 
     def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, ssim_value, loss, reward, image, gt_image, additional_rewards):
