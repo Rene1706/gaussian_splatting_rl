@@ -116,14 +116,14 @@ class GradNormThresholdSelector(ActionSelector):
 
 
 class ParamNetwork(nn.Module):
-    def __init__(self, input_size, hidden_size=16, output_size=3):
+    def __init__(self, input_size, hidden_size=16, output_size=3, increase_bias=2.0, decrease_bias=-2.0):
         super(ParamNetwork, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, output_size)
-        self.init_weights()
+        self.init_weights(increase_bias, decrease_bias)
 
-    def init_weights(self):
+    def init_weights(self, increase_bias=2.0, decrease_bias=-2.0):
         nn.init.kaiming_uniform_(self.fc1.weight, nonlinearity='relu')
         nn.init.kaiming_uniform_(self.fc2.weight, nonlinearity='relu')
         nn.init.zeros_(self.fc3.weight)
@@ -137,9 +137,9 @@ class ParamNetwork(nn.Module):
         
         # Example: Increase the bias for a specific action to increase its initial probability
         # Assuming you want to favor the first action initially:
-        self.fc3.bias.data[0] = 2.0  # Increase bias for the first action
-        self.fc3.bias.data[1] = -2.0  # Decrease bias for the second action
-        self.fc3.bias.data[2] = -2.0  # Decrease bias for the third action
+        self.fc3.bias.data[0] = increase_bias  # Increase bias for the first action
+        self.fc3.bias.data[1] = decrease_bias  # Decrease bias for the second action
+        self.fc3.bias.data[2] = decrease_bias  # Decrease bias for the third action
     
     def forward(self, x):
         x = torch.relu(self.fc1(x))
@@ -148,21 +148,27 @@ class ParamNetwork(nn.Module):
         return x
 
 class ParamBasedActionSelector(ActionSelector):
-    def __init__(self, input_size=3, k=2, hidden_size=16):
+    def __init__(self, input_size=3, k=2, hidden_size=16, increase_bias=2.0, decrease_bias=-2.0):
         super().__init__(k=k)
-        self.param_network = ParamNetwork(input_size, hidden_size)
+        self.param_network = ParamNetwork(input_size, hidden_size, increase_bias=increase_bias, decrease_bias=decrease_bias)
 
     def forward(self, gaussians, *, iteration, scene_extent):
         grads = gaussians.xyz_gradient_accum / gaussians.denom
         grads[grads.isnan()] = 0.0
+        #print("grads:", grads)
         grad_norms = torch.norm(grads, dim=-1, p=2)
         max_scalings = torch.max(gaussians.get_scaling, dim=1).values
+        #print("max_scalings: ", max_scalings)
         opacities = gaussians.get_opacity.squeeze(-1)
+        #print("opacities: ", opacities)
         
         # Normalize the inputs
-        #grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
+        grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
         max_scalings = (max_scalings - max_scalings.mean()) / (max_scalings.std() + 1e-8)
         opacities = (opacities - opacities.mean()) / (opacities.std() + 1e-8)
+
+        # Log-scale the grad norms
+        # grad_norms = torch.log(grad_norms + 1e-9)
 
         # Prepare input for the parameter network
         inputs = torch.cat([
@@ -170,7 +176,7 @@ class ParamBasedActionSelector(ActionSelector):
             max_scalings.unsqueeze(-1),
             opacities.unsqueeze(-1)
         ], dim=-1)
-        
+        #print(inputs)
         # Get action probabilities from the parameter network
         logits = self.param_network(inputs)
         action_probs = torch.softmax(logits, dim=-1)
