@@ -99,7 +99,8 @@ def train_and_evaluate(cfg, datasets, output_path):
         print(f"Training on dataset {train_dataset}, evaluating on dataset {eval_dataset}")
         # RL Training
         if not cfg.eval_params.skip_training:
-            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, train_dataset)
+            #cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, train_dataset)
+            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, "01Gorilla")
             cfg.wandb_params.name = f"RL_train_{unique_str}"
             cfg.wandb_params.id = f"RL_train_{unique_str}"
             cfg.wandb_params.group = "default_pruning"
