@@ -32,6 +32,7 @@ from utils.general_utils import safe_state
 from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
 from utils.image_utils import psnr
+from utils.reward_utils import exponential_moving_average
 import seaborn as sns
 from loggers import WandBLogger
 import importlib
@@ -171,7 +172,7 @@ def training(
 
     # Only use one candidate for evaluation optimization run
     k = rlp.num_candidates if rlp.train_rl else 1
-    action_selector = ParamBasedActionSelector(k=k, hidden_size=rlp.hidden_size).to("cuda")
+    action_selector = ParamBasedActionSelector(k=k, hidden_size=rlp.hidden_size, increase_bias=rlp.increase_bias, decrease_bias=rlp.decrease_bias).to("cuda")
     policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
     #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
     # Load RL meta model and optimizer
@@ -251,7 +252,7 @@ def training(
 
             # TODO: Calculate better reward for gaussian selection
             psnr_value = psnr(image, gt_image)
-            gaussian_selection_psnr[i] = psnr_value.mean().item()
+            gaussian_selection_psnr[i] = exponential_moving_average(gaussian_selection_psnr[i], psnr_value.mean().item())
             reward = reward_function(loss=loss,
                                      psnr=psnr_value,
                                      last_psnr=last_iter_psnr,
@@ -264,7 +265,13 @@ def training(
             # Calculate and log additional rewards
             additional_rewards = {}
             for func in reward_functions[1:]:
-                additional_rewards[func.__name__] = func(loss, psnr_value, gaussians)
+                additional_rewards[func.__name__] = func(loss=loss,
+                                     psnr=psnr_value,
+                                     last_psnr=last_iter_psnr,
+                                     delta_gaussians=gaussians_delta[i],
+                                     gaussians=gaussians,
+                                     iteration=iteration,
+                                     rl_params=rlp)
 
             #TODO Rene implement wandblogger
             with torch.no_grad():
@@ -295,16 +302,17 @@ def training(
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     if log_probability_candidates is not None:
                         # Check if there are too many/less gaussians to kill the training before error 
-                        break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 200 for gaussian in gaussian_candidate_list)
+                        break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 100 for gaussian in gaussian_candidate_list)
                         # Check each candidate and adjust reward if necessary
                         for i, gaussians in enumerate(gaussian_candidate_list):
-                            if gaussians.num_points > 300000 or gaussians.num_points < 200:
+                            if gaussians.num_points > 300000 or gaussians.num_points < 100:
                                 gaussian_selection_rewards[i] = torch.tensor(rlp.break_reward, device="cuda")  # Set reward to -1 for this candidate
                         # Update meta policy
                         if rlp.train_rl:
                             with torch.enable_grad():
                                 policy_optimizer.zero_grad(set_to_none=True)
-                                rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]                                
+                                rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]  
+                                # ! Check if advantage is right might be better like first baseline then advantage then normalize                      
                                 advantage = (rewards - rewards.mean()) / (rewards.std() + 1e-8) #[Kandidaten]                                
                                 expanded_advantage = advantage.unsqueeze(1).expand_as(log_probability_candidates) # [Kandidaten, Number Gaussians]   
                                 # Maybe add entropy loss for exploration
@@ -349,11 +357,11 @@ def training(
                     gaussian_selection_rewards.clear()
                     gaussian_selection_psnr.clear()
                     gaussians_delta.clear()
-                    if iteration % 5000 == 0:
+                    if iteration % 5000 == 0 and not rlp.train_rl:
                         wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
                     for i, actions in enumerate(action_candidates):
                         gaussian_clone = deepcopy(gaussians)
-                        visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
+                        #visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
                         n_cloned, n_splitted, n_pruned, n_gaussians, n_noop = apply_actions(gaussian_clone, actions, 0.005, size_threshold, scene.cameras_extent)
                         delta_gaussians = n_cloned + n_splitted - n_pruned
                         gaussians_delta.append(delta_gaussians)
