@@ -117,7 +117,7 @@ def training(
         eval_output_path=None
 ):
     # Initialize a buffer for storing (log_probs, reward) pairs
-    max_buffer_size = 500000  # Buffer can hold up to 1,000,000 log_probs
+    max_buffer_size = 100000  # Buffer can hold up to 1,000,000 log_probs
     # Initialize buffers for storing log_probs and rewards
     replay_buffer = ReplayBuffer(max_buffer_size)
     # Load the replay buffer if it exists
@@ -316,7 +316,7 @@ def training(
                         densification_counter += 1
                         # Check each candidate and adjust reward if necessary
                         for i, gaussians in enumerate(gaussian_candidate_list):
-                            if gaussians.num_points > 300000 or gaussians.num_points < 200:
+                            if gaussians.num_points > 300000 or gaussians.num_points < 100:
                                 gaussian_selection_rewards[i] = rlp.break_reward  # Set reward to -1 for this candidate
 
                         # Iterate through each candidate and store individual entries
@@ -340,7 +340,7 @@ def training(
                                 replay_buffer.add(input, action, old_log_prob, reward)
 
 
-                        break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 200 for gaussian in gaussian_candidate_list)
+                        break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 100 for gaussian in gaussian_candidate_list)
                         # Update meta policy
                         with torch.enable_grad():
                             if (densification_counter) % 3 == 0 and rlp.train_rl or break_training:
