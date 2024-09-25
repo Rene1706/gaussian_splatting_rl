@@ -11,6 +11,7 @@ model_params:
   white_background: false
   data_device: "cuda"
   eval: false
+  start_number_gaussians: 100000
 
 pipeline_params:
   convert_SHs_python: false
@@ -37,13 +38,13 @@ optimization_params:
   random_background: false
 
 eval_params:
-  skip_training: false # ! Change for eval
+  skip_training: true # ! Change for eval
   skip_rendering: false
   skip_metrics: false
   skip_eval: false
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 600 # ! Change for eval
-  eval_frequency: 601 # ! Change for eval
+  epochs: 1 # ! Change for eval
+  eval_frequency: 1 # ! Change for eval
   
   
 script_params:
@@ -101,7 +102,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 1440 # ! Change for eval
+    timeout_min: 200 # ! Change for eval
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1
