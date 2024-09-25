@@ -21,6 +21,13 @@ from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
 
+def save_gaussian_num_points(model_path, num_points):
+    """Saves the number of Gaussian points to a file in the model_path directory."""
+    file_path = os.path.join(model_path, "gaussian_num_points.txt")
+    with open(file_path, 'w') as f:
+        f.write(f"Number of Gaussian points: {num_points}\n")
+    print(f"Saved Gaussian points to {file_path}")
+
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
@@ -41,6 +48,9 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
 
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+        # Save the number of Gaussian points to a file in the model path
+        save_gaussian_num_points(dataset.model_path, gaussians.num_points)
 
         if not skip_train:
              render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
