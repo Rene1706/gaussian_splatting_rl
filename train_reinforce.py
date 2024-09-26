@@ -277,7 +277,9 @@ def training(
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     # ! Render multiple images for RL agent reward
                     psnr_values = []
-                    visibility_counts = torch.zeros(gaussians.num_points, device="cuda")
+                    # Initialize tensors to accumulate contributions
+                    opacities_sum = torch.zeros(gaussians.num_points, device="cuda")
+                    radii_sum = torch.zeros(gaussians.num_points, device="cuda")
 
                     with torch.no_grad():
                         for _ in range(num_views):
@@ -286,28 +288,34 @@ def training(
 
                             # Render without computing gradients
                             eval_render_pkg = render(eval_viewpoint_cam, gaussians, pipe, background)
-                            eval_image, eval_visibility_filter = (
-                                eval_render_pkg["render"],
-                                eval_render_pkg["visibility_filter"],
-                            )
+                            eval_image = eval_render_pkg["render"]
+                            eval_radii = eval_render_pkg["radii"]  # Get the radii
+                            # Get opacities
+                            eval_opacities = gaussians.get_opacity  # Shape: [num_gaussians, 1]
+                            eval_opacities = eval_opacities.squeeze()  # Shape: [num_gaussians]
 
                             # Compute PSNR
                             eval_gt_image = eval_viewpoint_cam.original_image.cuda()
                             eval_psnr = psnr(eval_image, eval_gt_image)
                             psnr_values.append(eval_psnr.mean().item())
 
-                            # Accumulate visibility counts
-                            visibility_counts[eval_visibility_filter] += 1.0
+                            # Accumulate opacities and radii
+                            opacities_sum += eval_opacities
+                            radii_sum += eval_radii.float()
 
                     # Average PSNR over all views
                     average_psnr = sum(psnr_values) / num_views
 
-                    # Normalize visibility counts
-                    unique_counts = torch.unique(visibility_counts, return_counts=True)
-                    print("Unique visibility counts: ", unique_counts)
-                    visibility_counts = visibility_counts / num_views
-                    
-                    print("Shape: ", visibility_counts.shape)
+                    # Compute combined weights
+                    combined_weights = opacities_sum * radii_sum  # Element-wise multiplication
+                    # Normalize the combined weights to sum to 1
+                    combined_weights = combined_weights / combined_weights.sum()
+                    print("opactiy_sum: ", opacities_sum)
+                    print("radii_sum: ", radii_sum)
+                    print("combined_weights: ", combined_weights)
+
+                    # Handle any potential division by zero
+                    combined_weights[combined_weights != combined_weights] = 0.0  # Replace NaNs with 0
 
                     reward = reward_function(loss=loss,
                                             psnr=average_psnr,
@@ -322,8 +330,7 @@ def training(
                     gaussian_selection_psnr[i] = exponential_moving_average(gaussian_selection_psnr[i], average_psnr)
                     
                     # Compute per-Gaussian rewards
-                    per_gaussian_rewards = torch.zeros(gaussians.num_points, device="cuda")
-                    per_gaussian_rewards += reward * visibility_counts  # Weighted by visibility
+                    per_gaussian_rewards = reward * combined_weights  # Weighted by combined contributions
 
                     # Map rewards to parent Gaussians
                     parent_indices = gaussians.parent_indices.cpu().numpy()
@@ -428,7 +435,7 @@ def training(
                             if (densification_counter) % 3 == 0 and rlp.train_rl or break_training:
                                 # Sample from the replay buffer
                                 sampled_inputs, sampled_actions, sampled_old_log_probs, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.3 * replay_buffer.size())))
-
+                                print("Sample Inputs:", sampled_inputs)
                                 # PPO update
                                 ppo_loss = ppo_update(action_selector, policy_optimizer, sampled_inputs, sampled_actions, sampled_rewards, sampled_old_log_probs)
                                 print("PPO loss:", ppo_loss)
