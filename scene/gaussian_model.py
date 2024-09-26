@@ -159,6 +159,8 @@ class GaussianModel:
 
         self.initial_pcd = pcd
 
+        self.parent_indices = torch.arange(self.num_points, device="cuda")
+
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -304,6 +306,7 @@ class GaussianModel:
     def prune_points(self, prune_mask: torch.Tensor):
         # print(f"Number of pruned points {torch.sum(prune_mask).item()}")
         valid_points_mask = ~prune_mask
+        self.parent_indices = self.parent_indices[valid_points_mask]
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
 
         self._xyz = optimizable_tensors["xyz"]
@@ -359,6 +362,7 @@ class GaussianModel:
             new_opacities,
             new_scaling,
             new_rotation,
+            new_parent_indices
     ):
         d = {
             "xyz": new_xyz,
@@ -381,6 +385,7 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.zeros((num_points, 1), device="cuda")
         self.denom = torch.zeros((num_points, 1), device="cuda")
         self.max_radii2D = torch.zeros(num_points, device="cuda")
+        self.parent_indices = torch.cat([self.parent_indices, new_parent_indices], dim=0)
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, *, N=2):
         n_init_points = self.num_points
@@ -412,6 +417,7 @@ class GaussianModel:
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N, 1, 1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N, 1, 1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N, 1)
+        new_parent_indices = self.parent_indices[selected_pts_mask].repeat(N)
 
         self.densification_postfix(
             new_xyz,
@@ -420,6 +426,7 @@ class GaussianModel:
             new_opacity,
             new_scaling,
             new_rotation,
+            new_parent_indices
         )
 
         prune_filter = torch.cat(
@@ -449,6 +456,7 @@ class GaussianModel:
         new_opacities = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
+        new_parent_indices = self.parent_indices[selected_pts_mask]
 
         self.densification_postfix(
             new_xyz,
@@ -457,6 +465,7 @@ class GaussianModel:
             new_opacities,
             new_scaling,
             new_rotation,
+            new_parent_indices
         )
 
     def densify_and_prune(self, max_grad: float, min_opacity: float, camera_extent, max_screen_size):

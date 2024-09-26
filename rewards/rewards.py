@@ -128,7 +128,7 @@ def reward_diff_psnr_relative(**kwargs):
     rl_params = kwargs.get('rl_params')
     iteration = kwargs.get('iteration')
     # Calculate the reward
-    psnr_diff = psnr.mean().item() - last_psnr
+    psnr_diff = psnr - last_psnr
     #print(f"PSNR: {psnr.mean().item()}, Last PSNR: {last_psnr}, PSNR Diff: {psnr_diff}")
     # Complexity penalty
     relative_delta_gaussians = delta_gaussians / gaussians.num_points

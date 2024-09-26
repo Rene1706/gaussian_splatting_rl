@@ -16,15 +16,15 @@ class ReplayBuffer:
     
     def sample(self, batch_size, device="cpu"):
         idxs = np.random.choice(len(self.buffer), batch_size, replace=False)
-        inputs, actions, old_log_prob, rewards = zip(*[self.buffer[idx] for idx in idxs])
+        inputs, actions, old_log_probs, rewards = zip(*[self.buffer[idx] for idx in idxs])
 
         # Move tensors to the desired device
         inputs = torch.stack(inputs).to("cuda")
-        actions = torch.stack(actions).to("cuda")
-        old_log_prob = torch.stack(old_log_prob).to("cuda")
-        rewards = torch.tensor(rewards).to("cuda")
+        actions = torch.tensor(actions, dtype=torch.float32).to("cuda")
+        old_log_probs = torch.tensor(old_log_probs, dtype=torch.float32).to("cuda")
+        rewards = torch.tensor(rewards, dtype=torch.float32).to("cuda")
 
-        return inputs, actions, old_log_prob, rewards
+        return inputs, actions, old_log_probs, rewards
     
     def size(self):
         return len(self.buffer)
