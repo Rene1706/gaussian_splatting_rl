@@ -117,7 +117,7 @@ def training(
         eval_output_path=None
 ):
     # Initialize a buffer for storing (log_probs, reward) pairs
-    max_buffer_size = 100000  # Buffer can hold up to 1,000,000 log_probs
+    max_buffer_size = 500000  # Buffer can hold up to 1,000,000 log_probs
     num_views = 50
     # Initialize buffers for storing log_probs and rewards
     replay_buffer = ReplayBuffer(max_buffer_size)
@@ -216,7 +216,7 @@ def training(
                 rewards_tensor = torch.stack([torch.tensor(r, dtype=torch.float32, device="cuda") for r in gaussian_selection_rewards])
                 gaussians_best_idx = rewards_tensor.argmax()
                 gaussians = gaussian_candidate_list[gaussians_best_idx]
-                last_iter_psnr = gaussian_selection_psnr[gaussians_best_idx]
+                #last_iter_psnr = gaussian_selection_psnr[gaussians_best_idx]
                 scene.gaussians = gaussians
                 gaussian_candidate_list.clear()
                 gaussian_selection_rewards.clear()
@@ -265,6 +265,28 @@ def training(
     
             loss.backward()
 
+            # Compute PSNR for logging
+            with torch.no_grad():
+                psnr_value = psnr(image, gt_image).mean().item()
+
+            # Log optimization iteration
+            with torch.no_grad():
+                wandb_logger.log_optimization_iteration(
+                    iteration, i, gaussians, Ll1, psnr_value, ssim_value, loss, image, gt_image
+                )
+
+            # Get first psnr value to compare for reward so its not 0 for the first iteration
+            if last_iter_psnr == 0 and iteration == opt.densify_from_iter:
+                # Compute average PSNR and contributions for initialization
+                average_psnr, _, _ = compute_average_psnr_and_contributions(
+                    gaussians=gaussians,
+                    scene=scene,
+                    pipe=pipe,
+                    background=background,
+                    num_views=num_views
+                )
+                last_iter_psnr = average_psnr  # Initialize last_iter_psnr
+
             # Keep track of max radii in image-space for pruning
             gaussians.max_radii2D[visibility_filter] = torch.max(
                 gaussians.max_radii2D[visibility_filter],
@@ -275,45 +297,34 @@ def training(
 
             if iteration < opt.densify_until_iter:
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                    # ! Render multiple images for RL agent reward
-                    psnr_values = []
-                    # Initialize tensors to accumulate contributions
-                    opacities_sum = torch.zeros(gaussians.num_points, device="cuda")
-                    radii_sum = torch.zeros(gaussians.num_points, device="cuda")
+                    # Compute average PSNR and contributions
+                    average_psnr, opacities_sum, radii_sum = compute_average_psnr_and_contributions(
+                        gaussians=gaussians,
+                        scene=scene,
+                        pipe=pipe,
+                        background=background,
+                        num_views=num_views
+                    )
 
-                    with torch.no_grad():
-                        for _ in range(num_views):
-                            # Pick a random camera for evaluation
-                            eval_viewpoint_cam = scene.getTrainCameras()[randint(0, len(scene.getTrainCameras()) - 1)]
-
-                            # Render without computing gradients
-                            eval_render_pkg = render(eval_viewpoint_cam, gaussians, pipe, background)
-                            eval_image = eval_render_pkg["render"]
-                            eval_radii = eval_render_pkg["radii"]  # Get the radii
-                            # Get opacities
-                            eval_opacities = gaussians.get_opacity  # Shape: [num_gaussians, 1]
-                            eval_opacities = eval_opacities.squeeze()  # Shape: [num_gaussians]
-
-                            # Compute PSNR
-                            eval_gt_image = eval_viewpoint_cam.original_image.cuda()
-                            eval_psnr = psnr(eval_image, eval_gt_image)
-                            psnr_values.append(eval_psnr.mean().item())
-
-                            # Accumulate opacities and radii
-                            opacities_sum += eval_opacities
-                            radii_sum += eval_radii.float()
-
-                    # Average PSNR over all views
-                    average_psnr = sum(psnr_values) / num_views
+                    # Compute average opacities and radii
+                    # ?  Not really necessary duo to normalization of combined weights
+                    opacities_avg = opacities_sum / num_views
+                    radii_avg = radii_sum / num_views
 
                     # Compute combined weights
-                    combined_weights = opacities_sum * radii_sum  # Element-wise multiplication
-                    # Normalize the combined weights to sum to 1
-                    combined_weights = combined_weights / combined_weights.sum()
-                    print("opactiy_sum: ", opacities_sum)
-                    print("radii_sum: ", radii_sum)
-                    print("combined_weights: ", combined_weights)
+                    combined_weights = opacities_avg * radii_avg  # Element-wise multiplication
 
+                    # Apply square root to reduce the effect of large values
+                    # combined_weights = torch.sqrt(combined_weights)
+                    # Scale combined_weights to range [0, scaling_factor]
+                    scaling_factor = 1.0  # Adjust as needed
+                    combined_weights = (combined_weights / combined_weights.max()) * scaling_factor
+                    # print("opacities_avg: ", opacities_avg)
+                    # print("radii_avg: ", radii_avg)
+                    # print("combined_weights: ", combined_weights)
+                    # print(f"Candidate {i} - Iteration {iteration}:")
+                    # print("Average PSNR: ", average_psnr)
+                    # print("last_iter_psnr: ", last_iter_psnr)
                     # Handle any potential division by zero
                     combined_weights[combined_weights != combined_weights] = 0.0  # Replace NaNs with 0
 
@@ -331,7 +342,7 @@ def training(
                     
                     # Compute per-Gaussian rewards
                     per_gaussian_rewards = reward * combined_weights  # Weighted by combined contributions
-
+                    # print("Per Gaussian Rewards: ", per_gaussian_rewards)
                     # Map rewards to parent Gaussians
                     parent_indices = gaussians.parent_indices.cpu().numpy()
                     per_gaussian_rewards_np = per_gaussian_rewards.detach().cpu().numpy()
@@ -354,7 +365,9 @@ def training(
                     # * Only log final reward before next densification
                     with torch.no_grad():
                         additional_rewards = {}
-                        wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, average_psnr, ssim_value, loss, reward, image, gt_image, additional_rewards)
+                        wandb_logger.log_densification_iteration(
+                            iteration, i, reward, per_gaussian_rewards, additional_rewards
+                        )
                     # Update scene.gaussians with the best candidate
                     if gaussian_selection_rewards and len(gaussian_selection_rewards) > 0:
                         rewards_tensor = torch.stack([torch.tensor(r, dtype=torch.float32, device="cuda") for r in gaussian_selection_rewards])
@@ -413,10 +426,6 @@ def training(
                             actions_np = actions.cpu().numpy()
                             log_probs_np = old_log_probs.cpu().numpy()
 
-                            print("Length of inputs_np: ", len(inputs_np))
-                            print("Length of actions_np: ", len(actions_np))
-                            print("Length of log_probs_np: ", len(log_probs_np))
-
                             # Store per-Gaussian entries
                             for idx in range(len(parent_indices)):
                                 parent_idx = parent_indices[idx]
@@ -435,7 +444,6 @@ def training(
                             if (densification_counter) % 3 == 0 and rlp.train_rl or break_training:
                                 # Sample from the replay buffer
                                 sampled_inputs, sampled_actions, sampled_old_log_probs, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.3 * replay_buffer.size())))
-                                print("Sample Inputs:", sampled_inputs)
                                 # PPO update
                                 ppo_loss = ppo_update(action_selector, policy_optimizer, sampled_inputs, sampled_actions, sampled_rewards, sampled_old_log_probs)
                                 print("PPO loss:", ppo_loss)
@@ -554,6 +562,65 @@ def get_last_iteration(train_rl):
         with iteration_file.open("r") as f:
             return int(f.read().strip())
     return 0
+
+def compute_average_psnr_and_contributions(
+    gaussians,
+    scene,
+    pipe,
+    background,
+    num_views=10,
+    device="cuda"
+):
+    """
+    Computes the average PSNR over multiple random views and accumulates opacities and radii sums.
+    
+    Args:
+        gaussians (GaussianModel): The current Gaussian model.
+        scene (Scene): The scene containing the cameras.
+        pipe (nn.Module): The rendering pipeline.
+        background (torch.Tensor): The background color or image.
+        num_views (int): Number of random views to sample.
+        device (str): Device to use ("cuda" or "cpu").
+    
+    Returns:
+        average_psnr (float): The average PSNR over the sampled views.
+        opacities_sum (torch.Tensor): Accumulated opacities sum per Gaussian.
+        radii_sum (torch.Tensor): Accumulated radii sum per Gaussian.
+    """
+    psnr_values = []
+    num_gaussians = gaussians.num_points
+
+    # Initialize tensors to accumulate contributions
+    opacities_sum = torch.zeros(num_gaussians, device=device)
+    radii_sum = torch.zeros(num_gaussians, device=device)
+
+    with torch.no_grad():
+        for _ in range(num_views):
+            # Pick a random camera for evaluation
+            eval_viewpoint_cam = scene.getTrainCameras()[randint(0, len(scene.getTrainCameras()) - 1)]
+
+            # Render without computing gradients
+            eval_render_pkg = render(eval_viewpoint_cam, gaussians, pipe, background)
+            eval_image = eval_render_pkg["render"]
+            eval_radii = eval_render_pkg["radii"]  # Get the radii
+
+            # Get opacities
+            eval_opacities = gaussians.get_opacity  # Shape: [num_gaussians, 1]
+            eval_opacities = eval_opacities.squeeze()  # Shape: [num_gaussians]
+
+            # Compute PSNR
+            eval_gt_image = eval_viewpoint_cam.original_image.to(device)
+            eval_psnr = psnr(eval_image, eval_gt_image)
+            psnr_values.append(eval_psnr.mean().item())
+
+            # Accumulate opacities and radii
+            opacities_sum += eval_opacities
+            radii_sum += eval_radii.float()
+
+    # Average PSNR over all views
+    average_psnr = sum(psnr_values) / num_views
+
+    return average_psnr, opacities_sum, radii_sum
 
 def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, max_screen_size, extent):
     noop_mask = actions == 0
