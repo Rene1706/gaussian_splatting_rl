@@ -9,6 +9,7 @@ from scene.gaussian_model import GaussianModel
 from scene import Scene
 from utils.loss_utils import l1_loss, ssim
 from arguments import WandbParams
+import numpy as np
 
 
 class WandBLogger:
@@ -20,32 +21,23 @@ class WandBLogger:
         self.image_interval = 5000
         self.last_iteration = last_iteration
 
-    def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, psnr_value, ssim_value, loss, reward, image, gt_image, additional_rewards):
+    def log_optimization_iteration(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, psnr_value, ssim_value, loss, image, gt_image):
         iteration += self.last_iteration  # Adjust the iteration number
         if candidate_index == 0:
             log_data = {
-                f'train_iter/candidate_{candidate_index}/l1_loss': Ll1.item(),
-                f'train_iter/candidate_{candidate_index}/loss': loss.item(),
-                f'train_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
-                f'train_iter/candidate_{candidate_index}/reward': reward,
-                f'train_iter/candidate_{candidate_index}/psnr': psnr_value,
+                f'optimization_iter/candidate_{candidate_index}/l1_loss': Ll1.item(),
+                f'optimization_iter/candidate_{candidate_index}/loss': loss.item(),
+                f'optimization_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
+                f'optimization_iter/candidate_{candidate_index}/psnr': psnr_value,
             }
-        
-        # Log additional rewards if provided
-        #if additional_rewards:
-        #    for reward_name, reward_value in additional_rewards.items():
-        #        log_data[f'train_iter/candidate_{candidate_index}/{reward_name}'] = reward_value
-        if candidate_index == 0:
             wandb.log(log_data, step=iteration)
-        
-        # Log these metrics at intervals specified by self.image_interval
-        if (iteration % self.image_interval == 0) and (candidate_index == 0):
-            wandb.log({
-                #f'train_iter/candidate_{candidate_index}/opacities': wandb.Histogram(gaussians.get_opacity.detach().cpu().numpy()),
-                #f'train_iter/candidate_{candidate_index}/scaling_max': wandb.Histogram(gaussians.get_scaling.detach().max(dim=1).values.cpu().numpy()),
-                f'train_iter/candidate_{candidate_index}/gt_image': [wandb.Image(gt_image, caption="Ground Truth")],
-                f'train_iter/candidate_{candidate_index}/pred_image': [wandb.Image(image, caption="Prediction")]
-            }, step=iteration)
+
+            # Log images at intervals specified by self.image_interval
+            if (iteration % self.image_interval == 0):
+                wandb.log({
+                    f'optimization_iter/candidate_{candidate_index}/gt_image': [wandb.Image(gt_image, caption="Ground Truth")],
+                    f'optimization_iter/candidate_{candidate_index}/pred_image': [wandb.Image(image, caption="Prediction")]
+                }, step=iteration)
 
     def log_densification_step(self, iteration, candidate_index, n_cloned, n_splitted, n_pruned, n_gaussians, n_noop):
         iteration += self.last_iteration  # Adjust the iteration number
@@ -76,3 +68,40 @@ class WandBLogger:
             "rl_train_iter/learning_rate": lr,
             "rl_train_iter/loss": loss.item(),
         },step = iteration)
+
+    def log_densification_iteration(self, iteration, candidate_index, reward, per_gaussian_rewards, additional_rewards=None):
+        iteration += self.last_iteration  # Adjust the iteration number
+        if candidate_index == 0:
+            log_data = {
+                f'densification_iter/candidate_{candidate_index}/reward': reward,
+            }
+
+            # Log additional rewards if provided
+            if additional_rewards:
+                for reward_name, reward_value in additional_rewards.items():
+                    log_data[f'densification_iter/candidate_{candidate_index}/{reward_name}'] = reward_value
+
+            # Ensure per_gaussian_rewards is a NumPy array
+            if isinstance(per_gaussian_rewards, torch.Tensor):
+                per_gaussian_rewards_np = per_gaussian_rewards.detach().cpu().numpy()
+            else:
+                per_gaussian_rewards_np = np.array(per_gaussian_rewards)
+
+            # Compute statistical summaries
+            mean_reward = np.mean(per_gaussian_rewards_np)
+            median_reward = np.median(per_gaussian_rewards_np)
+            std_reward = np.std(per_gaussian_rewards_np)
+            max_reward = np.max(per_gaussian_rewards_np)
+            min_reward = np.min(per_gaussian_rewards_np)
+
+            # Prepare data for logging
+            log_data.update({
+                f'densification_iter/candidate_{candidate_index}/per_gaussian_rewards/mean': mean_reward,
+                f'densification_iter/candidate_{candidate_index}/per_gaussian_rewards/median': median_reward,
+                f'densification_iter/candidate_{candidate_index}/per_gaussian_rewards/std': std_reward,
+                f'densification_iter/candidate_{candidate_index}/per_gaussian_rewards/max': max_reward,
+                f'densification_iter/candidate_{candidate_index}/per_gaussian_rewards/min': min_reward,
+                f'densification_iter/candidate_{candidate_index}/per_gaussian_rewards/histogram': wandb.Histogram(per_gaussian_rewards_np)
+            })
+
+            wandb.log(log_data, step=iteration)
