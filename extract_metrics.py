@@ -104,8 +104,8 @@ def save_results_to_csv(results, output_file):
             writer.writerow(result)
 
 if __name__ == "__main__":
-    base_folder = "hydra/multirun/eval_psnr_diff_rel_001_004/21-59-20"  # Replace with the path to your base folder
-    output_file = "eval_psnr_diff_rel_001_004.csv"       # Output file where results will be saved
+    base_folder = "hydra/multirun/2024-09-27/09-07-53"  # Replace with the path to your base folder
+    output_file = "reward_per_gaussian_8h_001_004.csv"       # Output file where results will be saved
 
     # Process folders and extract data
     results = process_folders(base_folder)

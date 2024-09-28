@@ -11,7 +11,7 @@ model_params:
   white_background: false
   data_device: "cuda"
   eval: false
-  start_number_gaussians: 100000
+  start_number_gaussians: 1000
 
 pipeline_params:
   convert_SHs_python: false
@@ -80,12 +80,12 @@ wandb_params:
   save_code: true
 
 rl_params:
-  rl_lr: 0.01
+  rl_lr: 0.0005
   meta_model: "meta_model.torch"
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
-  num_candidates: 4
+  num_candidates: 1
   hidden_size: 16
   break_reward: -10.0
   complexity_penalty: 0.001
@@ -102,7 +102,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 200 # ! Change for eval
+    timeout_min: 240 # ! Change for eval
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1

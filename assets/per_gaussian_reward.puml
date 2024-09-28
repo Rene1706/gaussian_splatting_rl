@@ -1,0 +1,26 @@
+@startuml
+title Reward Assignment to Parent Gaussians
+
+actor "Policy Selector" as Policy
+actor "Gaussian Model" as Gaussian
+participant "Action Application" as Action
+participant "Reward Calculation" as RewardCalc
+participant "Parent Identification" as ParentID
+participant "Reward Aggregation" as RewardAgg
+
+Policy -> Action: Select Actions (Clone, Split, Noop)
+Action -> Gaussian: Apply Actions to Gaussians
+Gaussian -> Gaussian: Create New Gaussians (Cloned/Split)
+Gaussian -> ParentID: Provide Parent Indices
+ParentID -> RewardCalc: Provide Parent-Gaussian Mapping
+
+RewardCalc -> Gaussian: Get Combined Contributions (Opacities * Radii)
+RewardCalc -> Gaussian: Calculate Per-Gaussian Rewards
+RewardCalc -> ParentID: Map Rewards to Parent Gaussians
+
+ParentID -> RewardAgg: Group Rewards by Parent
+RewardAgg -> RewardAgg: Average Rewards per Parent
+
+RewardAgg -> Gaussian: Assign Rewards to Parent Gaussians
+
+@enduml
