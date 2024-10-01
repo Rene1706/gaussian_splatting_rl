@@ -20,8 +20,8 @@ class ReplayBuffer:
 
         # Move tensors to the desired device
         inputs = torch.stack(inputs).to("cuda")
-        actions = torch.stack(actions).to("cuda")
-        old_log_prob = torch.stack(old_log_prob).to("cuda")
+        actions = torch.tensor(actions).to("cuda")
+        old_log_prob = torch.tensor(old_log_prob).to("cuda")
         rewards = torch.tensor(rewards).to("cuda")
 
         return inputs, actions, old_log_prob, rewards
