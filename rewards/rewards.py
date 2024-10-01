@@ -1,5 +1,6 @@
 import torch
 import math
+import numpy as np
 
 def reward_default(**kwargs):
     loss = kwargs.get('loss')
@@ -95,7 +96,7 @@ def reward_diff_psnr(**kwargs):
     rl_params = kwargs.get('rl_params')
     iteration = kwargs.get('iteration')
     # Calculate the reward
-    psnr_diff = psnr.mean().item() - last_psnr
+    psnr_diff = psnr - last_psnr
     #print(f"PSNR: {psnr.mean().item()}, Last PSNR: {last_psnr}, PSNR Diff: {psnr_diff}")
     # Complexity penalty
     # Normalize or log-scale the Gaussian count change to prevent excessive penalties
@@ -128,7 +129,7 @@ def reward_diff_psnr_relative(**kwargs):
     rl_params = kwargs.get('rl_params')
     iteration = kwargs.get('iteration')
     # Calculate the reward
-    psnr_diff = psnr.mean().item() - last_psnr
+    psnr_diff = psnr - last_psnr
     #print(f"PSNR: {psnr.mean().item()}, Last PSNR: {last_psnr}, PSNR Diff: {psnr_diff}")
     # Complexity penalty
     relative_delta_gaussians = delta_gaussians / gaussians.num_points
@@ -149,5 +150,44 @@ def reward_diff_psnr_relative(**kwargs):
     
     reward = (rl_params.psnr_weight * psnr_diff) - complexity_penalty
     #print("Reward: ", reward)
+    return torch.tensor(reward, dtype=torch.float32, device="cuda")
+
+def reward_pareto(**kwargs):
+    # Get the arguments
+    psnr = kwargs.get('psnr')
+    gaussians = kwargs.get('gaussians')
+    current_point = [gaussians.num_points, psnr]
+    # Load the fitted curve data
+    data = np.load("/bigwork/nhmlhuer/git/master_evaluation/fitted_curve_data.npz")
+    x_fit = data['x_fit']
+    y_fit = data['y_fit']
+    
+    # Define the ranges based on the saved fitted curve for normalization
+    psnr_min, psnr_max = min(y_fit), max(y_fit)
+    gaussians_min, gaussians_max = min(x_fit), max(x_fit)
+    psnr_range = psnr_max - psnr_min
+    gaussians_range = gaussians_max - gaussians_min
+    
+    # Function to calculate normalized distance
+    def normalized_distance(point1, point2, psnr_range, gaussians_range):
+        psnr_diff = (point1[1] - point2[1]) / psnr_range
+        gaussians_diff = (point1[0] - point2[0]) / gaussians_range
+        return np.sqrt(psnr_diff**2 + gaussians_diff**2)
+    
+    def calculate_reward(distance, scale_factor=1):
+        # Cap the reward so that very small distances don't give excessively high rewards
+        reward = scale_factor / (1 + distance)
+        return reward
+    
+    # Calculate the normalized distance for each point on the curve
+    normalized_distances = np.array([normalized_distance(current_point, np.array([x_fit[i], y_fit[i]]), psnr_range, gaussians_range) for i in range(len(x_fit))])
+    
+    # Find the closest point on the curve
+    closest_index = np.argmin(normalized_distances)
+    closest_point = np.array([x_fit[closest_index], y_fit[closest_index]])
+    
+    # Return the closest point and the distance
+    closest_distance = normalized_distances[closest_index]
+    reward = calculate_reward(closest_distance)
     return torch.tensor(reward, dtype=torch.float32, device="cuda")
 
