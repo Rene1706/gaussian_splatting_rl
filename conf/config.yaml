@@ -11,7 +11,7 @@ model_params:
   white_background: false
   data_device: "cuda"
   eval: false
-  start_number_gaussians: 100000
+  start_number_gaussians: 100000 # ! Change for eval
 
 pipeline_params:
   convert_SHs_python: false
@@ -85,7 +85,7 @@ rl_params:
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
-  num_candidates: 4
+  num_candidates: 2
   hidden_size: 16
   break_reward: -10.0
   complexity_penalty: 0.001
@@ -93,7 +93,7 @@ rl_params:
   late_reward_bonus: 0.00001
   increase_bias: 2.0
   decrease_bias: -2.0
-  reward_function: ["reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
+  reward_function: ["reward_diff_psnr_relative"]
  #TODO Make all rewards are gotten from rewards.py and then just the one used here used as real reward
  # Otherwhise slurm hydra sweep not working
 hydra:
@@ -102,7 +102,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 200 # ! Change for eval
+    timeout_min: 120 # ! Change for eval
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1
@@ -114,9 +114,9 @@ hydra:
         - module load CUDA/12.3.0
         - export PYTHONPATH=$PYTHONPATH:/bigwork/nhmlhuer/git/backup/gaussian_splatting_rl/src/
         - source activate rl_cloned
-    additional_parameters:
+    #additional_parameters:
     # SLURM specific options
-      mail-user: rene.huertgen@stud.uni-hannover.de
-      mail-type: BEGIN,END,FAIL
+    #  mail-user: rene.huertgen@stud.uni-hannover.de
+    #  mail-type: BEGIN,END,FAIL
 
 training_script: "train_reinforce.py"
