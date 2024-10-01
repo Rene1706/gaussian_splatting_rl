@@ -196,8 +196,8 @@ def training(
     # Load RL meta model, optimizer and scheduler
     if rlp.meta_model and Path(rlp.meta_model).exists():
         print(f"Loading meta_model from {rlp.meta_model}")
-        action_selector.load_state_dict(torch.load(rlp.meta_model))
-        #action_selector.param_network.load_state_dict(torch.load(rlp.meta_model))
+        #action_selector.load_state_dict(torch.load(rlp.meta_model))
+        action_selector.param_network.load_state_dict(torch.load(rlp.meta_model))
 
     if rlp.optimizer and Path(rlp.optimizer).exists():
         print(f"Loading optimizer from {rlp.optimizer}")
@@ -565,6 +565,7 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     noop_mask = actions == 0
     clone_mask = actions == 1
     split_mask = actions == 2
+    prune_mask = actions == 3
 
     # Extend split mask to have the correct size after cloning
     n_cloned_points = torch.sum(clone_mask)
@@ -580,7 +581,13 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     N = 2
     n_splitted_points = torch.sum(split_mask) * (N - 1)
     n_noop_points = torch.sum(noop_mask)
-
+    # Update mask with new created gaussians to not prune them
+    prune_mask = torch.cat(
+        [
+            prune_mask,
+            torch.zeros(n_cloned_points + n_splitted_points, device="cuda", dtype=torch.bool),
+        ]
+    )
     # Number of point before densification is done for correct logging
     n_gaussians = gaussians.num_points
 
@@ -588,10 +595,11 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     gaussians.densify_and_clone_selected(clone_mask)
     gaussians.densify_and_split_selected(split_mask, N=N)
 
-    #gaussians.select_and_prune_points(prune_mask)
+    n_pruned_points = torch.sum(prune_mask)
+    gaussians.select_and_prune_points(prune_mask)
     # ? Pruning done after split, clone as otherwhise masks are not accurate anymore.
     # ? Problem is that often cloned points are directly pruned afterwards
-    n_pruned_points = gaussians.select_and_prune_points_old(min_opacity, max_screen_size, extent)
+    #n_pruned_points = gaussians.select_and_prune_points_old(min_opacity, max_screen_size, extent)
 
     print(f"Cloned: {n_cloned_points}",
           f"Splitted: {n_splitted_points}",

@@ -116,7 +116,7 @@ class GradNormThresholdSelector(ActionSelector):
 
 
 class ParamNetwork(nn.Module):
-    def __init__(self, input_size, hidden_size=128, output_size=3):
+    def __init__(self, input_size, hidden_size=128, output_size=4):
         super(ParamNetwork, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
