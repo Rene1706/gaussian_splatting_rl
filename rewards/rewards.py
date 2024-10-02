@@ -162,32 +162,21 @@ def reward_pareto(**kwargs):
     x_fit = data['x_fit']
     y_fit = data['y_fit']
     
-    # Define the ranges based on the saved fitted curve for normalization
-    psnr_min, psnr_max = min(y_fit), max(y_fit)
-    gaussians_min, gaussians_max = min(x_fit), max(x_fit)
-    psnr_range = psnr_max - psnr_min
-    gaussians_range = gaussians_max - gaussians_min
+    # Find the PSNR on the fitted curve that corresponds to the current number of Gaussians
+    psnr_curve = np.interp(gaussians.num_points, x_fit, y_fit)
     
-    # Function to calculate normalized distance
-    def normalized_distance(point1, point2, psnr_range, gaussians_range):
-        psnr_diff = (point1[1] - point2[1]) / psnr_range
-        gaussians_diff = (point1[0] - point2[0]) / gaussians_range
-        return np.sqrt(psnr_diff**2 + gaussians_diff**2)
+    # Calculate the PSNR distance (difference between current PSNR and the curve PSNR)
+    psnr_distance = np.abs(psnr - psnr_curve)
     
+    # Define a simple reward function based on the PSNR distance
     def calculate_reward(distance, scale_factor=1):
         # Cap the reward so that very small distances don't give excessively high rewards
         reward = scale_factor / (1 + distance)
         return reward
     
-    # Calculate the normalized distance for each point on the curve
-    normalized_distances = np.array([normalized_distance(current_point, np.array([x_fit[i], y_fit[i]]), psnr_range, gaussians_range) for i in range(len(x_fit))])
+    # Calculate the reward based on PSNR distance
+    reward = calculate_reward(psnr_distance)
     
-    # Find the closest point on the curve
-    closest_index = np.argmin(normalized_distances)
-    closest_point = np.array([x_fit[closest_index], y_fit[closest_index]])
-    
-    # Return the closest point and the distance
-    closest_distance = normalized_distances[closest_index]
-    reward = calculate_reward(closest_distance)
+    # Return the reward as a tensor
     return torch.tensor(reward, dtype=torch.float32, device="cuda")
 
