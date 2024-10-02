@@ -93,7 +93,8 @@ rl_params:
   late_reward_bonus: 0.00001
   increase_bias: 2.0
   decrease_bias: -2.0
-  reward_function: ["reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
+  clip_param: 0.2
+  reward_function: ["reward_diff_psnr_relative"]
  #TODO Make all rewards are gotten from rewards.py and then just the one used here used as real reward
  # Otherwhise slurm hydra sweep not working
 hydra:

@@ -115,6 +115,7 @@ class RLParams(ParamGroup):
         self.late_reward_bonus = 0.00001
         self.increase_bias = 2.0
         self.decrease_bias = -2.0
+        self.clip_param = 0.2
 
         super().__init__(parser, "RL Parameters")
 
