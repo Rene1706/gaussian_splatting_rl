@@ -20,7 +20,7 @@ class WandBLogger:
         self.image_interval = 5000
         self.last_iteration = last_iteration
 
-    def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, ssim_value, loss, reward, image, gt_image, additional_rewards):
+    def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, psnr_value, ssim_value, loss, reward, image, gt_image, additional_rewards):
         iteration += self.last_iteration  # Adjust the iteration number
         if candidate_index == 0:
             log_data = {
@@ -28,6 +28,7 @@ class WandBLogger:
                 f'train_iter/candidate_{candidate_index}/loss': loss.item(),
                 f'train_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
                 f'train_iter/candidate_{candidate_index}/reward': reward,
+                f'train_iter/candidate_{candidate_index}/psnr': psnr_value,
             }
         
         # Log additional rewards if provided
