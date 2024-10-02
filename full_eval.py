@@ -69,17 +69,18 @@ def run_command(command, env=None, timeout=7200):  # Timeout set to 2 hours (720
         print("Error output:")
         print(stderr, file=sys.stderr)
         raise RuntimeError(f"Command failed with return code {process.returncode}: {command}")
-"""
-def run_command(command):
-    with open('output.log', 'w') as stdout_file, open('error.log', 'w') as stderr_file:
-        process = subprocess.Popen(command, shell=True, stdout=stdout_file, stderr=stderr_file)
-        process.wait()  # Wait for the process to finish
-
-        if process.returncode != 0:
-            raise RuntimeError(f"Command failed with return code {process.returncode}")
-"""
 
 def train_and_evaluate(cfg, datasets, output_path):
+
+    # Hardcoded training and evaluation datasets
+    training_datasets = [
+        "03Mallard", "05Whale", "07Owl", "09Swan",
+        "11Pig", "13Phoenix", "15Parrot", "17Scorpion", "02Unicorn", "04Turtle", "06Bird", "08Sabertooth", "10Sheep",
+        "12Zalika", "14Elephant", "16Cat"
+    ]
+    evaluation_datasets = [
+        "01Gorilla", "18Obesobeso", "19Bear", "20Puppy"
+    ]
     # Create log directory for this full evaluation run
     unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f") + "_" + str(random.randint(1000, 9999))
     full_eval_output_path = os.path.join("./output/", f"full_eval_{unique_str}")
@@ -94,29 +95,29 @@ def train_and_evaluate(cfg, datasets, output_path):
     for epoch in range(cfg.eval_params.epochs):
         print(f"Running epoch {epoch + 1}/{cfg.eval_params.epochs}")
         # Sample random datasets for training and evaluation
-        train_dataset = random.choice(datasets)
-        eval_dataset = random.choice(datasets)
-        print(f"Training on dataset {train_dataset}, evaluating on dataset {eval_dataset}")
+        train_dataset = random.choice(training_datasets)
+        print(f"Training on dataset {train_dataset}")
         # RL Training
         if not cfg.eval_params.skip_training:
-            #cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, train_dataset)
-            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, "01Gorilla")
-            cfg.wandb_params.name = f"RL_train_{unique_str}"
-            cfg.wandb_params.id = f"RL_train_{unique_str}"
-            cfg.wandb_params.group = "default_pruning"
-            cfg.wandb_params.tags = ["training", "default_pruning", f"reward_{cfg.rl_params.reward_function}", "no_buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, train_dataset)
+            #cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, "01Gorilla")
+            cfg.wandb_params.name = f"Final_train_{unique_str}"
+            cfg.wandb_params.id = f"Final_train_{unique_str}"
+            cfg.wandb_params.group = "final_runs"
+            cfg.wandb_params.tags = ["training", "default_pruning", "reinforce",f"reward_{cfg.rl_params.reward_function}", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
             # Optimizing the RL model
             cfg.rl_params.train_rl = True
             training_command = create_training_command(cfg)
             run_command(training_command)
 
-        # Optimization with RL model without learning
-        if not cfg.eval_params.skip_eval and epoch % cfg.eval_params.eval_frequency == 0:
-            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, "01Gorilla")#eval_dataset)
-            cfg.wandb_params.name = f"RL_eval_{unique_str}"
+    if not cfg.eval_params.skip_eval:
+        for eval_dataset in evaluation_datasets:
+            print(f"Eval on dataset {eval_dataset}")
+            cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, eval_dataset)
+            cfg.wandb_params.name = f"Final_eval_{unique_str}"
             cfg.wandb_params.resume = "never"
-            cfg.wandb_params.id = f"RL_eval_{unique_str}"
-            cfg.wandb_params.group = "default_pruning"
+            cfg.wandb_params.id = f"Final_eval_{unique_str}"
+            cfg.wandb_params.group = "final_runs"
             add_eval_tags(cfg)            
             # Skip optimizing the RL model
             cfg.rl_params.train_rl = False
@@ -125,7 +126,7 @@ def train_and_evaluate(cfg, datasets, output_path):
 
 def add_eval_tags(cfg):
     # Add tags for evaluation
-    cfg.wandb_params.tags = ["evaluation", "default_pruning", "no_buffer", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
+    cfg.wandb_params.tags = ["evaluation", "default_pruning", "reinforce", f"lr{str(cfg.rl_params.rl_lr).replace('.', '_')}"]
     if cfg.rl_params.meta_model:
         path = os.path.dirname(cfg.rl_params.meta_model)
         overrides_folder = os.path.join(path, ".hydra")
@@ -149,5 +150,3 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     main()
-
-

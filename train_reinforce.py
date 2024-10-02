@@ -114,7 +114,8 @@ def training(
         checkpoint,
         debug_from,
         run_name="",
-        eval_output_path=None
+        eval_output_path=None,
+        last_iteration = 0
 ):
     first_iter = 0
     last_iter = 0
@@ -176,7 +177,13 @@ def training(
     action_selector = ParamBasedActionSelector(k=k, hidden_size=rlp.hidden_size, increase_bias=rlp.increase_bias, decrease_bias=rlp.decrease_bias).to("cuda")
     policy_optimizer = torch.optim.AdamW(action_selector.parameters(), lr=rlp.rl_lr)
     #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
-    # Load RL meta model and optimizer
+    #lr_scheduler = ExponentialLR(policy_optimizer, gamma=0.98)
+
+    if rlp.base_model and Path(rlp.base_model).exists() and last_iteration == 0:
+        print(f"Loading base_model from {rlp.base_model}")
+        action_selector.param_network.load_state_dict(torch.load(rlp.base_model))
+
+    # Load RL meta model, optimizer and scheduler
     if rlp.meta_model and Path(rlp.meta_model).exists():
         print(f"Loading meta_model from {rlp.meta_model}")
         action_selector.load_state_dict(torch.load(rlp.meta_model))
@@ -691,7 +698,8 @@ if __name__ == "__main__":
         args.start_checkpoint,
         args.debug_from,
         args.run_name,
-        args.eval_output_path
+        args.eval_output_path,
+        last_iteration
     )
 
     # All done

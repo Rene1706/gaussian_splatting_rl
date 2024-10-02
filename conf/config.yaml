@@ -37,10 +37,10 @@ optimization_params:
   random_background: false
 
 eval_params:
-  skip_training: true # ! Change for eval
+  skip_training: false # ! Change for eval
   skip_rendering: false
   skip_metrics: false
-  skip_eval: false
+  skip_eval: true # ! Change for eval
   data_path: "data/MAD-Sim_3dgs"
   epochs: 1 # ! Change for eval
   eval_frequency: 1 # ! Change for eval
@@ -79,7 +79,7 @@ wandb_params:
   save_code: true
 
 rl_params:
-  rl_lr: 0.01
+  rl_lr: 0.005
   meta_model: "meta_model.torch"
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
@@ -110,7 +110,6 @@ hydra:
         - module load Miniconda3
         - module load GCC/11.2.0
         - module load CUDA/12.3.0
-        - export PYTHONPATH=$PYTHONPATH:/bigwork/nhmlhuer/git/gaussian_splatting_rl/src/
         - source activate rl_cloned
     additional_parameters:
     # SLURM specific options
