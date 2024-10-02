@@ -1,5 +1,6 @@
 import torch
 import math
+import np
 
 def reward_default(**kwargs):
     loss = kwargs.get('loss')
@@ -149,5 +150,33 @@ def reward_diff_psnr_relative(**kwargs):
     
     reward = (rl_params.psnr_weight * psnr_diff) - complexity_penalty
     #print("Reward: ", reward)
+    return torch.tensor(reward, dtype=torch.float32, device="cuda")
+
+def reward_pareto(**kwargs):
+    # Get the arguments
+    psnr = kwargs.get('psnr')
+    gaussians = kwargs.get('gaussians')
+    current_point = [gaussians.num_points, psnr]
+    # Load the fitted curve data
+    data = np.load("/bigwork/nhmlhuer/git/master_evaluation/fitted_curve_data.npz")
+    x_fit = data['x_fit']
+    y_fit = data['y_fit']
+    
+    # Find the PSNR on the fitted curve that corresponds to the current number of Gaussians
+    psnr_curve = np.interp(gaussians.num_points, x_fit, y_fit)
+    
+    # Calculate the PSNR distance (difference between current PSNR and the curve PSNR)
+    psnr_distance = np.abs(psnr - psnr_curve)
+    
+    # Define a simple reward function based on the PSNR distance
+    def calculate_reward(distance, scale_factor=1):
+        # Cap the reward so that very small distances don't give excessively high rewards
+        reward = scale_factor / (1 + distance)
+        return reward
+    
+    # Calculate the reward based on PSNR distance
+    reward = calculate_reward(psnr_distance)
+    
+    # Return the reward as a tensor
     return torch.tensor(reward, dtype=torch.float32, device="cuda")
 
