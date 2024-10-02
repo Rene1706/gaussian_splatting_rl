@@ -1,7 +1,7 @@
 import os
 import json
 import re
-
+import argparse
 def find_numbered_folder(output_folder):
     """Finds the folder inside 'output' that starts with a number."""
     for folder_name in os.listdir(output_folder):
@@ -104,8 +104,14 @@ def save_results_to_csv(results, output_file):
             writer.writerow(result)
 
 if __name__ == "__main__":
-    base_folder = "hydra/multirun/imitation_learning_prune_short/12-25-49"  # Replace with the path to your base folder
-    output_file = "eval_imitation_with_prune_short.csv"       # Output file where results will be saved
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Process folders and extract metrics.")
+    parser.add_argument('--base_folder', required=True, help='Path to the base folder')
+    parser.add_argument('--output_file', required=True, help='Output file where results will be saved')
+    args = parser.parse_args()
+
+    base_folder = args.base_folder
+    output_file = args.output_file
 
     # Process folders and extract data
     results = process_folders(base_folder)
