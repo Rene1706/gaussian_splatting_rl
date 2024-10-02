@@ -114,7 +114,8 @@ def training(
         checkpoint,
         debug_from,
         run_name="",
-        eval_output_path=None
+        eval_output_path=None,
+        last_iteration = 0
 ):
     # Initialize a buffer for storing (log_probs, reward) pairs
     max_buffer_size = 100000  # Buffer can hold up to 1,000,000 log_probs
@@ -192,12 +193,14 @@ def training(
     #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
     #lr_scheduler = ExponentialLR(policy_optimizer, gamma=0.98)
 
+    if rlp.base_model and Path(rlp.base_model).exists() and last_iteration == 0:
+        print(f"Loading base_model from {rlp.base_model}")
+        action_selector.param_network.load_state_dict(torch.load(rlp.base_model))
 
     # Load RL meta model, optimizer and scheduler
     if rlp.meta_model and Path(rlp.meta_model).exists():
         print(f"Loading meta_model from {rlp.meta_model}")
         action_selector.load_state_dict(torch.load(rlp.meta_model))
-        #action_selector.param_network.load_state_dict(torch.load(rlp.meta_model))
 
     if rlp.optimizer and Path(rlp.optimizer).exists():
         print(f"Loading optimizer from {rlp.optimizer}")
@@ -726,7 +729,8 @@ if __name__ == "__main__":
         args.start_checkpoint,
         args.debug_from,
         args.run_name,
-        args.eval_output_path
+        args.eval_output_path,
+        last_iteration
     )
 
     # All done
