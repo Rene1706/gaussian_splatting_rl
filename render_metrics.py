@@ -71,5 +71,5 @@ def run_scripts_in_folders(base_folder):
         delete_train_test_folders(numbered_folder)
 
 if __name__ == "__main__":
-    base_folder = "hydra/multirun/eval_grad_not_norm_ppo/10-08-36"  # Replace with the path to your base folder
+    base_folder = "hydra/multirun/imitation_learning_prune_short/12-25-49"  # Replace with the path to your base folder
     run_scripts_in_folders(base_folder)

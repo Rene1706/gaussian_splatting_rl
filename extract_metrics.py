@@ -104,8 +104,8 @@ def save_results_to_csv(results, output_file):
             writer.writerow(result)
 
 if __name__ == "__main__":
-    base_folder = "hydra/multirun/eval_grad_not_norm_ppo/10-08-36"  # Replace with the path to your base folder
-    output_file = "eval_grad_not_norm_ppo.csv"       # Output file where results will be saved
+    base_folder = "hydra/multirun/imitation_learning_prune_short/12-25-49"  # Replace with the path to your base folder
+    output_file = "eval_imitation_with_prune_short.csv"       # Output file where results will be saved
 
     # Process folders and extract data
     results = process_folders(base_folder)
