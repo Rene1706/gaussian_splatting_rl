@@ -94,6 +94,7 @@ rl_params:
   increase_bias: 2.0
   decrease_bias: -2.0
   clip_param: 0.2
+  ppo_update_frequency: 3
   reward_function: ["reward_diff_psnr_relative"]
  #TODO Make all rewards are gotten from rewards.py and then just the one used here used as real reward
  # Otherwhise slurm hydra sweep not working
