@@ -163,18 +163,18 @@ class ParamBasedActionSelector(ActionSelector):
     def forward(self, gaussians, *, iteration, scene_extent):
         grads = gaussians.xyz_gradient_accum / gaussians.denom
         grads[grads.isnan()] = 0.0
-        grad_norms = torch.norm(grads, dim=-1, p=2)
+        #grad_norms = torch.norm(grads, dim=-1, p=2)
         max_scalings = torch.max(gaussians.get_scaling, dim=1).values
         opacities = gaussians.get_opacity.squeeze(-1)
         
         # Normalize the inputs
-        grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
-        max_scalings = (max_scalings - max_scalings.mean()) / (max_scalings.std() + 1e-8)
-        opacities = (opacities - opacities.mean()) / (opacities.std() + 1e-8)
+        #grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
+        #max_scalings = (max_scalings - max_scalings.mean()) / (max_scalings.std() + 1e-8)
+        #opacities = (opacities - opacities.mean()) / (opacities.std() + 1e-8)
 
         # Prepare input for the parameter network
         inputs = torch.cat([
-            grad_norms.unsqueeze(-1),
+            grads,
             max_scalings.unsqueeze(-1),
             opacities.unsqueeze(-1)
         ], dim=-1)
