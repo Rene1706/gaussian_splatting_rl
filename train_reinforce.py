@@ -387,7 +387,7 @@ def training(
                                 sampled_inputs, sampled_actions, sampled_old_log_probs, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.3 * replay_buffer.size())))
                                 #print("Sampled inputs: ", sampled_inputs)
                                 # PPO update
-                                ppo_loss = ppo_update(action_selector, policy_optimizer, sampled_inputs, sampled_actions, sampled_rewards, sampled_old_log_probs)
+                                ppo_loss = ppo_update(action_selector, policy_optimizer, sampled_inputs, sampled_actions, sampled_rewards, sampled_old_log_probs, rlp.clip_param)
                                 print("PPO loss:", ppo_loss)
                                 print("Buffer size: ", replay_buffer.size())
                                 # Optionally log RL loss, if needed
