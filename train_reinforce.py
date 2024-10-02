@@ -382,7 +382,7 @@ def training(
                             break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 100 for gaussian in gaussian_candidate_list)
                         # Update meta policy
                         with torch.enable_grad():
-                            if (densification_counter) % 3 == 0 and rlp.train_rl or break_training:
+                            if (densification_counter) % rlp.ppo_update_frequency == 0 and rlp.train_rl or break_training:
                                 # Sample from the replay buffer
                                 sampled_inputs, sampled_actions, sampled_old_log_probs, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.3 * replay_buffer.size())))
                                 #print("Sampled inputs: ", sampled_inputs)

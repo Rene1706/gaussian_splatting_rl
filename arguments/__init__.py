@@ -117,6 +117,7 @@ class RLParams(ParamGroup):
         self.increase_bias = 2.0
         self.decrease_bias = -2.0
         self.clip_param = 0.2
+        self.ppo_update_frequency = 3
 
         super().__init__(parser, "RL Parameters")
 
