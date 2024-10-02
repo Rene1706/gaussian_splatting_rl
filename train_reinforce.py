@@ -554,10 +554,13 @@ def compute_average_psnr_and_contributions(
             # Accumulate opacities and radii
             opacities_sum += eval_opacities
             radii_sum += eval_radii.float()
+            # Deleting variables and empty GPU chace to avoid out of memory error
+            del eval_render_pkg, eval_image, eval_radii
+            torch.cuda.empty_cache()
 
     # Average PSNR over all views
     average_psnr = sum(psnr_values) / num_views
-
+    torch.cuda.empty_cache()
     return average_psnr, opacities_sum, radii_sum
 
 
