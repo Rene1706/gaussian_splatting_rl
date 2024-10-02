@@ -273,9 +273,11 @@ def training(
                                      iteration=iteration,
                                      rl_params=rlp)
 
-            #TODO Rene implement wandblogger
+            # * Only log final reward before next densification
             with torch.no_grad():
-                wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, ssim_value, loss, reward, image, gt_image, additional_rewards)
+                if iteration < opt.densify_until_iter:
+                    if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                        wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, psnr_value.mean().item(), ssim_value, loss, reward, image, gt_image, additional_rewards)
         iter_end.record()
 
         with torch.no_grad():
@@ -301,14 +303,15 @@ def training(
             if iteration < opt.densify_until_iter:
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     if log_probability_candidates is not None:
-                        # Check if there are too many/less gaussians to kill the training before error 
-                        break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 100 for gaussian in gaussian_candidate_list)
-                        # Check each candidate and adjust reward if necessary
-                        for i, gaussians in enumerate(gaussian_candidate_list):
-                            if gaussians.num_points > 300000 or gaussians.num_points < 100:
-                                gaussian_selection_rewards[i] = torch.tensor(rlp.break_reward, device="cuda")  # Set reward to -1 for this candidate
+                        break_training = False
                         # Update meta policy
                         if rlp.train_rl:
+                            # Check if there are too many/less gaussians to kill the training before error 
+                            break_training = any(gaussian.num_points > 300000 or gaussian.num_points < 100 for gaussian in gaussian_candidate_list)
+                            # Check each candidate and adjust reward if necessary
+                            for i, gaussians in enumerate(gaussian_candidate_list):
+                                if gaussians.num_points > 300000 or gaussians.num_points < 100:
+                                    gaussian_selection_rewards[i] = torch.tensor(rlp.break_reward, device="cuda")  # Set reward to -1 for this candidate
                             with torch.enable_grad():
                                 policy_optimizer.zero_grad(set_to_none=True)
                                 rewards = torch.stack(gaussian_selection_rewards).squeeze() # [Kandidaten]  
