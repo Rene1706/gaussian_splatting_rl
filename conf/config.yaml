@@ -38,13 +38,13 @@ optimization_params:
   random_background: false
 
 eval_params:
-  skip_training: true # ! Change for eval
+  skip_training: false # ! Change for eval
   skip_rendering: false
   skip_metrics: false
-  skip_eval: false
+  skip_eval: true # ! Change for eval
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 1 # ! Change for eval
-  eval_frequency: 1 # ! Change for eval
+  epochs: 6 # ! Change for eval
+  eval_frequency: 600 # ! Change for eval
   
   
 script_params:
@@ -82,6 +82,7 @@ wandb_params:
 rl_params:
   rl_lr: 0.01
   meta_model: "meta_model.torch"
+  base_model: "/bigwork/nhmlhuer/git/backup/gaussian_splatting_rl/imitation_model.torch"
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
@@ -102,7 +103,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 120 # ! Change for eval
+    timeout_min: 180 # ! Change for eval
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1
