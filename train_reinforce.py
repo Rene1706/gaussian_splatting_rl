@@ -311,14 +311,17 @@ def training(
                         last_psnr=last_iter_psnr,
                         rl_params=rlp,
                         iteration=iteration,
-                        num_views=num_views
+                        num_views=num_views,
+                        delta_gaussians=gaussians_delta[i]
                     )
 
                     gaussian_selection_psnr[i] = exponential_moving_average(gaussian_selection_psnr[i], average_psnr)
                     
                     # Update the overall reward for this candidate (if needed)
                     candidate_reward = average_per_gaussian_reward.sum().item()
-                    gaussian_selection_rewards[i] = candidate_reward
+                    gaussian_selection_rewards[i] = torch.tensor(candidate_reward, dtype=torch.float32, device="cuda")
+                    #print("Mean: ",average_per_gaussian_reward.mean())
+                    #print("std: ",average_per_gaussian_reward.std())
 
                     # Map rewards to parent Gaussians
                     parent_indices = gaussians.parent_indices.cpu().numpy()
@@ -343,7 +346,7 @@ def training(
                     with torch.no_grad():
                         additional_rewards = {}
                         wandb_logger.log_densification_iteration(
-                            iteration, i, reward, average_per_gaussian_reward, additional_rewards
+                            iteration, i, 0, average_per_gaussian_reward, additional_rewards
                         )
                     # Update scene.gaussians with the best candidate
                     if gaussian_selection_rewards and len(gaussian_selection_rewards) > 0:
@@ -550,7 +553,8 @@ def compute_average_psnr_and_contributions(
     reward_function=None,
     last_psnr=None,
     rl_params=None,
-    iteration=None
+    iteration=None,
+    delta_gaussians=None
 ):
     """
     Computes the average PSNR over multiple random views and optionally accumulates per-Gaussian rewards.
@@ -603,6 +607,7 @@ def compute_average_psnr_and_contributions(
                 reward = reward_function(
                     psnr=eval_psnr.mean().item(),
                     last_psnr=last_psnr,
+                    delta_gaussians=delta_gaussians,
                     gaussians=gaussians,
                     iteration=iteration,
                     rl_params=rl_params

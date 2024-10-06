@@ -1,6 +1,6 @@
 import torch
 import math
-import np
+import numpy as np
 
 def reward_default(**kwargs):
     loss = kwargs.get('loss')
