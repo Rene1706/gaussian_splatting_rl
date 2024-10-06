@@ -2,6 +2,7 @@ import os
 import subprocess
 import re
 import shutil
+import argparse
 
 def find_numbered_folder(output_folder):
     """Finds the folder inside 'output' that starts with a number."""
@@ -71,5 +72,11 @@ def run_scripts_in_folders(base_folder):
         delete_train_test_folders(numbered_folder)
 
 if __name__ == "__main__":
-    base_folder = "hydra/multirun/eval_grad_not_norm_ppo/10-08-36"  # Replace with the path to your base folder
+
+    parser = argparse.ArgumentParser(description="Run scripts in folders and clean up.")
+    parser.add_argument('--base_folder', type=str, required=True, help='Path to the base folder')
+    
+    args = parser.parse_args()
+    base_folder = args.base_folder
+    
     run_scripts_in_folders(base_folder)

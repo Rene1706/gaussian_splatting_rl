@@ -264,8 +264,8 @@ def training(
             gt_image = viewpoint_cam.original_image.cuda()
             Ll1 = l1_loss(image, gt_image)
             ssim_value = ssim(image, gt_image)
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
-    
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)       
+
             loss.backward()
             # Get first psnr value to compare for reward so its not 0 for the first iteration
             if last_iter_psnr == 0 and iteration == opt.densify_from_iter:
