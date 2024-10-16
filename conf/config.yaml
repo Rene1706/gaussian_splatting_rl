@@ -81,6 +81,7 @@ wandb_params:
 rl_params:
   rl_lr: 0.01
   meta_model: "meta_model.torch"
+  base_model: "base_model.torch"
   optimizer: "rl_optimizer.torch"
   lr_scheduler: "lr_scheduler.torch"
   train_rl: true
