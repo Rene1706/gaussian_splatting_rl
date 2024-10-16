@@ -102,6 +102,7 @@ class RLParams(ParamGroup):
     def __init__(self, parser):
         self.rl_lr = 0.005
         self.meta_model = "meta_model.torch"
+        self.base_model = ""
         self.optimizer = "rl_optimizer.torch"
         self.lr_scheduler = "lr_scheduler.torch"
         self.train_rl = False
