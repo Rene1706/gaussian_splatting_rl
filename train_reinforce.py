@@ -560,7 +560,6 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     noop_mask = actions == 0
     clone_mask = actions == 1
     split_mask = actions == 2
-    prune_mask = actions == 3
 
     # Extend split mask to have the correct size after cloning
     n_cloned_points = torch.sum(clone_mask)
@@ -576,13 +575,7 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     N = 2
     n_splitted_points = torch.sum(split_mask) * (N - 1)
     n_noop_points = torch.sum(noop_mask)
-    # Update mask with new created gaussians to not prune them
-    prune_mask = torch.cat(
-        [
-            prune_mask,
-            torch.zeros(n_cloned_points + n_splitted_points, device="cuda", dtype=torch.bool),
-        ]
-    )
+
     # Number of point before densification is done for correct logging
     n_gaussians = gaussians.num_points
 
@@ -590,12 +583,14 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     gaussians.densify_and_clone_selected(clone_mask)
     gaussians.densify_and_split_selected(split_mask, N=N)
 
-    n_pruned_points = torch.sum(prune_mask)
-    gaussians.select_and_prune_points(prune_mask)
-    # ? Pruning done after split, clone as otherwhise masks are not accurate anymore.
-    # ? Problem is that often cloned points are directly pruned afterwards
-    #n_pruned_points = gaussians.select_and_prune_points_old(min_opacity, max_screen_size, extent)
-
+    #print("PRUNE MASK ME: ", prune_mask.shape)
+    #gaussians.select_and_prune_points(prune_mask)
+    n_pruned_points = gaussians.select_and_prune_points_old(min_opacity, max_screen_size, extent)
+    # Open the CSV file for appending
+    #with open("densifcation.csv", mode='a', newline='') as log_file:
+    #    writer = csv.writer(log_file)
+    #    writer.writerow([0, n_cloned_points, n_splitted_points, torch.sum(prune_mask), gaussians.num_points])
+    
     print(f"Cloned: {n_cloned_points}",
           f"Splitted: {n_splitted_points}",
           f"Pruned: {n_pruned_points}",
@@ -604,7 +599,6 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     
     torch.cuda.empty_cache()
     return n_cloned_points, n_splitted_points, n_pruned_points, n_gaussians, n_noop_points
-
 
 def prepare_output_and_logger(args, wandb_config, eval_output_path=None):
     if eval_output_path:
