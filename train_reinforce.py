@@ -267,6 +267,17 @@ def training(
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)       
 
             loss.backward()
+
+            # Compute PSNR for logging
+            with torch.no_grad():
+                psnr_value = psnr(image, gt_image).mean().item()
+
+            # Log optimization iteration
+            with torch.no_grad():
+                wandb_logger.log_optimization_iteration(
+                    iteration, i, gaussians, Ll1, psnr_value, ssim_value, loss, image, gt_image
+                )
+            
             # Get first psnr value to compare for reward so its not 0 for the first iteration
             if last_iter_psnr == 0 and iteration == opt.densify_from_iter:
                 # Compute average PSNR and contributions for initialization
