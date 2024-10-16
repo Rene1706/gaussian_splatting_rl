@@ -20,6 +20,25 @@ class WandBLogger:
         self.image_interval = 5000
         self.last_iteration = last_iteration
 
+    def log_optimization_iteration(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, psnr_value, ssim_value, loss, image, gt_image):
+        iteration += self.last_iteration  # Adjust the iteration number
+        if candidate_index == 0:
+            log_data = {
+                f'optimization_iter/candidate_{candidate_index}/l1_loss': Ll1.item(),
+                f'optimization_iter/candidate_{candidate_index}/loss': loss.item(),
+                f'optimization_iter/candidate_{candidate_index}/ssim': ssim_value.item(),
+                f'optimization_iter/candidate_{candidate_index}/psnr': psnr_value,
+            }
+            wandb.log(log_data, step=iteration)
+
+            # Log images at intervals specified by self.image_interval
+            if (iteration % self.image_interval == 0):
+                wandb.log({
+                    f'optimization_iter/candidate_{candidate_index}/gt_image': [wandb.Image(gt_image, caption="Ground Truth")],
+                    f'optimization_iter/candidate_{candidate_index}/pred_image': [wandb.Image(image, caption="Prediction")]
+                }, step=iteration)
+
+
     def log_train_iter_candidate(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, psnr_value, ssim_value, loss, reward, image, gt_image, additional_rewards):
         iteration += self.last_iteration  # Adjust the iteration number
         if candidate_index == 0:
@@ -69,7 +88,7 @@ class WandBLogger:
             step=iteration
         )
 
-    def log_rl_loss(self, iteration, loss, advantage, policy_optimizer):
+    def log_rl_loss(self, iteration, loss, advantage, rewards, policy_optimizer):
         iteration += self.last_iteration  # Adjust the iteration number
         lr = policy_optimizer.param_groups[0]['lr']
         wandb.log({
@@ -78,3 +97,5 @@ class WandBLogger:
         },step = iteration)
         for i, adv in enumerate(advantage):
             wandb.log({f"rl_train_iter/candidate_{i}/advantage": adv.item()}, step = iteration)
+        for i, rew in enumerate(rewards):
+            wandb.log({f"rl_train_iter/candidate_{i}/reward": rew.item()}, step = iteration)

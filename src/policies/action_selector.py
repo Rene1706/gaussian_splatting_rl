@@ -116,7 +116,7 @@ class GradNormThresholdSelector(ActionSelector):
 
 
 class ParamNetwork(nn.Module):
-    def __init__(self, input_size, hidden_size=16, output_size=3, increase_bias=2.0, decrease_bias=-2.0):
+    def __init__(self, input_size, hidden_size=16, output_size=4, increase_bias=2.0, decrease_bias=-2.0):
         super(ParamNetwork, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -140,7 +140,8 @@ class ParamNetwork(nn.Module):
         self.fc3.bias.data[0] = increase_bias  # Increase bias for the first action
         self.fc3.bias.data[1] = decrease_bias  # Decrease bias for the second action
         self.fc3.bias.data[2] = decrease_bias  # Decrease bias for the third action
-    
+        self.fc3.bias.data[3] = decrease_bias
+
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
@@ -156,23 +157,23 @@ class ParamBasedActionSelector(ActionSelector):
         grads = gaussians.xyz_gradient_accum / gaussians.denom
         grads[grads.isnan()] = 0.0
         #print("grads:", grads)
-        grad_norms = torch.norm(grads, dim=-1, p=2)
+        #grad_norms = torch.norm(grads, dim=-1, p=2)
         max_scalings = torch.max(gaussians.get_scaling, dim=1).values
         #print("max_scalings: ", max_scalings)
         opacities = gaussians.get_opacity.squeeze(-1)
         #print("opacities: ", opacities)
         
         # Normalize the inputs
-        grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
-        max_scalings = (max_scalings - max_scalings.mean()) / (max_scalings.std() + 1e-8)
-        opacities = (opacities - opacities.mean()) / (opacities.std() + 1e-8)
+        #grad_norms = (grad_norms - grad_norms.mean()) / (grad_norms.std() + 1e-8)
+        #max_scalings = (max_scalings - max_scalings.mean()) / (max_scalings.std() + 1e-8)
+        #opacities = (opacities - opacities.mean()) / (opacities.std() + 1e-8)
 
         # Log-scale the grad norms
         # grad_norms = torch.log(grad_norms + 1e-9)
 
         # Prepare input for the parameter network
         inputs = torch.cat([
-            grad_norms.unsqueeze(-1),
+            grads,
             max_scalings.unsqueeze(-1),
             opacities.unsqueeze(-1)
         ], dim=-1)

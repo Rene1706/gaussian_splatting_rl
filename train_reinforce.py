@@ -120,6 +120,7 @@ def training(
     last_iter = 0
     last_iter_psnr = 0
     delta_gaussians = 0
+    num_views = 50
     # Get reward function to be used
     reward_function_name = rlp.reward_function
     print("Reward function used: ", reward_function_name)
@@ -192,19 +193,23 @@ def training(
     candidates_created = 0  # Counter when the last candidates were created
     for iteration in range(first_iter, opt.iterations + 1):
         if iteration - candidates_created > opt.densification_interval * 5:
-            # Select best gaussians if densification is over
-            gaussians_best_idx = torch.stack(gaussian_selection_rewards).argmax()
-            #print(f"Rewards: {gaussian_selection_rewards}, idx: {gaussians_best_idx}")
-            gaussians = gaussian_candidate_list[gaussians_best_idx]
-            last_iter_psnr = gaussian_selection_psnr[gaussians_best_idx]
-            scene.gaussians = gaussians
-            gaussian_candidate_list.clear()
-            gaussian_selection_rewards.clear()
-            gaussian_selection_psnr.clear()
-            gaussian_candidate_list.append(gaussians)
-            gaussian_selection_rewards.append(0)
-            gaussian_selection_psnr.append(0)
-            candidates_created = opt.iterations + 1  # Do not do this again
+            if gaussian_selection_rewards and len(gaussian_selection_rewards) > 0:
+                # Convert rewards to tensors if they aren't already
+                rewards_tensor = torch.stack([torch.tensor(r, dtype=torch.float32, device="cuda") for r in gaussian_selection_rewards])
+                gaussians_best_idx = rewards_tensor.argmax()
+                gaussians = gaussian_candidate_list[gaussians_best_idx]
+                #last_iter_psnr = gaussian_selection_psnr[gaussians_best_idx]
+                scene.gaussians = gaussians
+                gaussian_candidate_list.clear()
+                gaussian_selection_rewards.clear()
+                gaussian_selection_psnr.clear()
+                gaussian_candidate_list.append(gaussians)
+                gaussian_selection_rewards.append(0)
+                gaussian_selection_psnr.append(0)
+                candidates_created = iteration  # Update the timestamp
+            else:
+                # No valid rewards; skip or handle accordingly
+                pass
 
         # Actual training start
         iter_start.record()
@@ -242,6 +247,29 @@ def training(
     
             loss.backward()
 
+            # Compute PSNR for logging
+            with torch.no_grad():
+                psnr_value = psnr(image, gt_image).mean().item()
+
+            # Log optimization iteration
+            with torch.no_grad():
+                wandb_logger.log_optimization_iteration(
+                    iteration, i, gaussians, Ll1, psnr_value, ssim_value, loss, image, gt_image
+                )
+
+            # Get first psnr value to compare for reward so its not 0 for the first iteration
+            if last_iter_psnr == 0 and iteration == opt.densify_from_iter:
+                # Compute average PSNR and contributions for initialization
+                average_psnr, _, _ = compute_average_psnr_and_contributions(
+                    gaussians=gaussians,
+                    scene=scene,
+                    pipe=pipe,
+                    background=background,
+                    num_views=num_views
+                )
+                last_iter_psnr = average_psnr  # Initialize last_iter_psnr
+
+
             # Keep track of max radii in image-space for pruning
             gaussians.max_radii2D[visibility_filter] = torch.max(
                 gaussians.max_radii2D[visibility_filter],
@@ -251,33 +279,44 @@ def training(
             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
             # TODO: Calculate better reward for gaussian selection
-            psnr_value = psnr(image, gt_image)
-            gaussian_selection_psnr[i] = exponential_moving_average(gaussian_selection_psnr[i], psnr_value.mean().item())
-            reward = reward_function(loss=loss,
-                                     psnr=psnr_value,
-                                     last_psnr=last_iter_psnr,
-                                     delta_gaussians=gaussians_delta[i],
-                                     gaussians=gaussians,
-                                     iteration=iteration,
-                                     rl_params=rlp)
-            gaussian_selection_rewards[i] = reward
+            if iteration < opt.densify_until_iter:
+                if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                    # ! Render multiple images for RL agent reward
+                    average_psnr, _, _ = compute_average_psnr_and_contributions(
+                        gaussians=gaussians,
+                        scene=scene,
+                        pipe=pipe,
+                        background=background,
+                        num_views=num_views
+                        )
+                    # Normalize visibility counts
+                    reward = reward_function(loss=loss,
+                                            psnr=average_psnr,
+                                            last_psnr=last_iter_psnr,
+                                            delta_gaussians=gaussians_delta[i],
+                                            gaussians=gaussians,
+                                            iteration=iteration,
+                                            rl_params=rlp)
+                    
+                    # Update gaussian_selection_psnr[i] with the exponential moving average
+                    gaussian_selection_rewards[i] = reward
+                    gaussian_selection_psnr[i] = exponential_moving_average(gaussian_selection_psnr[i], average_psnr)
 
-            # Calculate and log additional rewards
-            additional_rewards = {}
-            for func in reward_functions[1:]:
-                additional_rewards[func.__name__] = func(loss=loss,
-                                     psnr=psnr_value,
-                                     last_psnr=last_iter_psnr,
-                                     delta_gaussians=gaussians_delta[i],
-                                     gaussians=gaussians,
-                                     iteration=iteration,
-                                     rl_params=rlp)
+                    # * Only log final reward before next densification
+                    with torch.no_grad():
+                        additional_rewards = {}
+                        wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, average_psnr, ssim_value, loss, reward, image, gt_image, additional_rewards)
+                    # Update scene.gaussians with the best candidate
+                    if gaussian_selection_rewards and len(gaussian_selection_rewards) > 0:
+                        rewards_tensor = torch.stack([torch.tensor(r, dtype=torch.float32, device="cuda") for r in gaussian_selection_rewards])
+                        best_idx = rewards_tensor.argmax()
+                        scene.gaussians = gaussian_candidate_list[best_idx]
+                    else:
+                        scene.gaussians = gaussian_candidate_list[0]
+            else:
+                # No densification, maintain current gaussians
+                scene.gaussians = gaussian_candidate_list[0]
 
-            # * Only log final reward before next densification
-            with torch.no_grad():
-                if iteration < opt.densify_until_iter:
-                    if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                        wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, psnr_value.mean().item(), ssim_value, loss, reward, image, gt_image, additional_rewards)
         iter_end.record()
 
         with torch.no_grad():
@@ -294,7 +333,6 @@ def training(
                 progress_bar.close()
 
             # Log and save
-            scene.gaussians = gaussian_candidate_list[torch.stack(gaussian_selection_rewards).argmax()]
             if iteration in saving_iterations:
                 print(f"\n[ITER {iteration}] Saving Gaussians")
                 scene.save(iteration)
@@ -326,7 +364,7 @@ def training(
                                 #lr_scheduler.step()
 
                             with torch.no_grad():
-                                wandb_logger.log_rl_loss(iteration, loss, advantage, policy_optimizer)
+                                wandb_logger.log_rl_loss(iteration, loss, advantage, rewards, policy_optimizer)
 
                         if break_training:
                             print(f"\nNumber of gaussians is outside the range. Optimizing action selector and stopping.")
@@ -456,10 +494,73 @@ def rl_update(policy_optimizer, lr_scheduler, log_probability_candidates, gaussi
         policy_optimizer.step()
         lr_scheduler.step()
 
+def compute_average_psnr_and_contributions(
+    gaussians,
+    scene,
+    pipe,
+    background,
+    num_views=10,
+    device="cuda"
+):
+    """
+    Computes the average PSNR over multiple random views and accumulates opacities and radii sums.
+    
+    Args:
+        gaussians (GaussianModel): The current Gaussian model.
+        scene (Scene): The scene containing the cameras.
+        pipe (nn.Module): The rendering pipeline.
+        background (torch.Tensor): The background color or image.
+        num_views (int): Number of random views to sample.
+        device (str): Device to use ("cuda" or "cpu").
+    
+    Returns:
+        average_psnr (float): The average PSNR over the sampled views.
+        opacities_sum (torch.Tensor): Accumulated opacities sum per Gaussian.
+        radii_sum (torch.Tensor): Accumulated radii sum per Gaussian.
+    """
+    psnr_values = []
+    num_gaussians = gaussians.num_points
+
+    # Initialize tensors to accumulate contributions
+    opacities_sum = torch.zeros(num_gaussians, device=device)
+    radii_sum = torch.zeros(num_gaussians, device=device)
+
+    with torch.no_grad():
+        for _ in range(num_views):
+            # Pick a random camera for evaluation
+            eval_viewpoint_cam = scene.getTrainCameras()[randint(0, len(scene.getTrainCameras()) - 1)]
+
+            # Render without computing gradients
+            eval_render_pkg = render(eval_viewpoint_cam, gaussians, pipe, background)
+            eval_image = eval_render_pkg["render"]
+            eval_radii = eval_render_pkg["radii"]  # Get the radii
+
+            # Get opacities
+            eval_opacities = gaussians.get_opacity  # Shape: [num_gaussians, 1]
+            eval_opacities = eval_opacities.squeeze()  # Shape: [num_gaussians]
+
+            # Compute PSNR
+            eval_gt_image = eval_viewpoint_cam.original_image.to(device)
+            eval_psnr = psnr(eval_image, eval_gt_image)
+            psnr_values.append(eval_psnr.mean().item())
+
+            # Accumulate opacities and radii
+            opacities_sum += eval_opacities
+            radii_sum += eval_radii.float()
+            # Deleting variables and empty GPU chace to avoid out of memory error
+            del eval_render_pkg, eval_image, eval_radii
+            torch.cuda.empty_cache()
+
+    # Average PSNR over all views
+    average_psnr = sum(psnr_values) / num_views
+    torch.cuda.empty_cache()
+    return average_psnr, opacities_sum, radii_sum
+
 def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, max_screen_size, extent):
     noop_mask = actions == 0
     clone_mask = actions == 1
     split_mask = actions == 2
+    prune_mask = actions == 3
 
     # Extend split mask to have the correct size after cloning
     n_cloned_points = torch.sum(clone_mask)
@@ -475,7 +576,13 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     N = 2
     n_splitted_points = torch.sum(split_mask) * (N - 1)
     n_noop_points = torch.sum(noop_mask)
-
+    # Update mask with new created gaussians to not prune them
+    prune_mask = torch.cat(
+        [
+            prune_mask,
+            torch.zeros(n_cloned_points + n_splitted_points, device="cuda", dtype=torch.bool),
+        ]
+    )
     # Number of point before densification is done for correct logging
     n_gaussians = gaussians.num_points
 
@@ -483,14 +590,12 @@ def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, 
     gaussians.densify_and_clone_selected(clone_mask)
     gaussians.densify_and_split_selected(split_mask, N=N)
 
-    #print("PRUNE MASK ME: ", prune_mask.shape)
-    #gaussians.select_and_prune_points(prune_mask)
-    n_pruned_points = gaussians.select_and_prune_points_old(min_opacity, max_screen_size, extent)
-    # Open the CSV file for appending
-    #with open("densifcation.csv", mode='a', newline='') as log_file:
-    #    writer = csv.writer(log_file)
-    #    writer.writerow([0, n_cloned_points, n_splitted_points, torch.sum(prune_mask), gaussians.num_points])
-    
+    n_pruned_points = torch.sum(prune_mask)
+    gaussians.select_and_prune_points(prune_mask)
+    # ? Pruning done after split, clone as otherwhise masks are not accurate anymore.
+    # ? Problem is that often cloned points are directly pruned afterwards
+    #n_pruned_points = gaussians.select_and_prune_points_old(min_opacity, max_screen_size, extent)
+
     print(f"Cloned: {n_cloned_points}",
           f"Splitted: {n_splitted_points}",
           f"Pruned: {n_pruned_points}",
