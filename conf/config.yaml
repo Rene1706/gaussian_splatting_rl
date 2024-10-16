@@ -37,13 +37,13 @@ optimization_params:
   random_background: false
 
 eval_params:
-  skip_training: true # ! Change for eval
+  skip_training: false # ! Change for eval
   skip_rendering: false
   skip_metrics: false
-  skip_eval: false
+  skip_eval: true
   data_path: "data/MAD-Sim_3dgs"
-  epochs: 1 # ! Change for eval
-  eval_frequency: 1 # ! Change for eval
+  epochs: 600 # ! Change for eval
+  eval_frequency: 601 # ! Change for eval
   
   
 script_params:
@@ -91,8 +91,8 @@ rl_params:
   complexity_penalty: 0.001
   psnr_weight: 1.0
   late_reward_bonus: 0.00001
-  increase_bias: 2.0
-  decrease_bias: -2.0
+  increase_bias: 1.5
+  decrease_bias: -1.5
   reward_function: ["reward_psnr_normalized", "reward_function_2", "reward_function_3", "reward_function_4", "reward_function_5", "reward_psnr_normalized_2", "reward_psnr_normalized_3", "reward_default"]
 
 hydra:
@@ -101,7 +101,7 @@ hydra:
   sweep:
     dir: ./hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
   launcher:
-    timeout_min: 120 # ! Change for eval
+    timeout_min: 1440 # ! Change for eval
     gres: gpu:1
     cpus_per_task: 8
     tasks_per_node: 1
