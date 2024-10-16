@@ -110,7 +110,6 @@ hydra:
         - module load Miniconda3
         - module load GCC/11.2.0
         - module load CUDA/12.3.0
-        - export PYTHONPATH=$PYTHONPATH:/bigwork/nhmlhuer/git/gaussian_splatting_rl/src/
         - source activate rl_cloned
     additional_parameters:
     # SLURM specific options
