@@ -17,7 +17,7 @@ class WandBLogger:
         #print(filtered_wandb_args)
         wandb.init(**filtered_wandb_args, config=wandb_config)
         self.wandb_args = wandb_args
-        self.image_interval = 5000
+        self.image_interval = 200000
         self.last_iteration = last_iteration
 
     def log_optimization_iteration(self, iteration, candidate_index, gaussians: GaussianModel, Ll1, psnr_value, ssim_value, loss, image, gt_image):
@@ -83,10 +83,10 @@ class WandBLogger:
 
     def log_point_cloud(self, point_cloud, iteration=0):
         iteration += self.last_iteration  # Adjust the iteration number
-        wandb.log(
-            {"point_cloud": wandb.Object3D(point_cloud)},
-            step=iteration
-        )
+        #wandb.log(
+        #    {"point_cloud": wandb.Object3D(point_cloud)},
+        #    step=iteration
+        #)
 
     def log_rl_loss(self, iteration, loss, advantage, rewards, policy_optimizer):
         iteration += self.last_iteration  # Adjust the iteration number
