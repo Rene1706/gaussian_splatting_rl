@@ -303,7 +303,8 @@ def training(
                                             delta_gaussians=gaussians_delta[i],
                                             gaussians=gaussians,
                                             iteration=iteration,
-                                            rl_params=rlp)
+                                            rl_params=rlp,
+                                            dataset_name=dataset.source_path.split("/")[-1])
                     
                     # Update gaussian_selection_psnr[i] with the exponential moving average
                     gaussian_selection_rewards[i] = reward

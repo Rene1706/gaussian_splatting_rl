@@ -152,10 +152,18 @@ def reward_pareto(**kwargs):
     psnr = kwargs.get('psnr')
     gaussians = kwargs.get('gaussians')
     current_point = [gaussians.num_points, psnr]
+    dataset_name = kwargs.get('dataset_name')
     # Load the fitted curve data
-    data = np.load("/bigwork/nhmlhuer/git/master_evaluation/fitted_curve_data.npz")
-    x_fit = data['x_fit']
-    y_fit = data['y_fit']
+    fitted_curve_file = f"/bigwork/nhmlhuer/gaussian-splatting/fitted_curves/fitted_curve_{dataset_name}.npz"
+
+    # Load the fitted curve data
+    try:
+        data = np.load(fitted_curve_file)
+        x_fit = data['x_fit']
+        y_fit = data['y_fit']
+    except FileNotFoundError:
+        raise ValueError(f"Fitted curve file for dataset '{dataset_name}' not found at {fitted_curve_file}")
+
     
     # Find the PSNR on the fitted curve that corresponds to the current number of Gaussians
     psnr_curve = np.interp(gaussians.num_points, x_fit, y_fit)
