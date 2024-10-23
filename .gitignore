@@ -16,3 +16,4 @@ wandb
 hydra
 *.err
 *.out
+*.json
