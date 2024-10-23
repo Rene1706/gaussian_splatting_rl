@@ -115,9 +115,7 @@ hydra:
         - module load CUDA/12.3.0
         - export PYTHONPATH=$PYTHONPATH:/bigwork/nhmlhuer/git/backup/gaussian_splatting_rl/src/
         - source activate rl_cloned
-    #additional_parameters:
-    # SLURM specific options
-    #  mail-user: rene.huertgen@stud.uni-hannover.de
-    #  mail-type: BEGIN,END,FAIL
+    additional_parameters:
+      exclude: gih-n001
 
 training_script: "train_reinforce.py"
