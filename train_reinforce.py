@@ -494,10 +494,10 @@ def save_last_iteration(train_rl, iteration):
         f.write(str(iteration))
 
 def get_last_iteration(train_rl):
+    iteration_file = Path("not_existing.txt")
     if train_rl:
         iteration_file = Path("last_iteration_train.txt")
-    else: 
-        iteration_file = Path("last_iteration_eval.txt")
+
     if iteration_file.exists():
         with iteration_file.open("r") as f:
             return int(f.read().strip())
