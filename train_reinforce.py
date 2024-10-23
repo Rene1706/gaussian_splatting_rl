@@ -192,6 +192,9 @@ def training(
     #lr_scheduler = StepLR(policy_optimizer, step_size=10, gamma=0.1)
     #lr_scheduler = ExponentialLR(policy_optimizer, gamma=0.98)
 
+    if rlp.base_model and Path(rlp.base_model).exists() and last_iteration == 0:
+        print(f"Loading base_model from {rlp.base_model}")
+        action_selector.param_network.load_state_dict(torch.load(rlp.base_model))
 
     # Load RL meta model, optimizer and scheduler
     if rlp.meta_model and Path(rlp.meta_model).exists():
