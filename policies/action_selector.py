@@ -140,7 +140,8 @@ class ParamNetwork(nn.Module):
         self.fc3.bias.data[0] = 2.0  # Increase bias for the first action
         self.fc3.bias.data[1] = -2.0  # Decrease bias for the second action
         self.fc3.bias.data[2] = -2.0  # Decrease bias for the third action
-    
+        self.fc3.bias.data[3] = -2.0  # Decrease bias for the third action
+
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))

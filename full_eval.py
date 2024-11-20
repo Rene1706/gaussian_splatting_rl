@@ -50,11 +50,11 @@ def get_datasets(data_path):
 
 def run_command(command, env=None, timeout=7200):  # Timeout set to 2 hours (7200 seconds)
     print(f"Executing: {command}")
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     # Could also do this
     #process = subprocess.Popen(command, shell=True, stdout=stdout_file, stderr=stderr_file)
     #process.wait()  # Wait for the process to finish
     try:
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         process.kill()
@@ -112,8 +112,11 @@ def train_and_evaluate(cfg, datasets, output_path):
         "11Pig", "13Pheonix", "15Parrot", "17Scorpion", "02Unicorn", "04Turtle", "06Bird", "08Sabertooth", "10Sheep",
         "12Zalika", "14Elephant", "16Cat"
     ]
+    #evaluation_datasets = [
+    #    "01Gorilla", "18Obesobeso", "19Bear", "20Puppy"
+    #]
     evaluation_datasets = [
-        "01Gorilla", "18Obesobeso", "19Bear", "20Puppy"
+        "01Gorilla"
     ]
     # Create log directory for this full evaluation run
     unique_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f") + "_" + str(random.randint(1000, 9999))
@@ -190,7 +193,10 @@ def add_eval_tags(cfg):
                 for line in model_params:
                     tag = line.split("=")[0].split(".")[1]
                     value = line.split("=")[1]
-                    cfg.wandb_params.tags.append(f"{tag}_{value}")
+                    if tag == "base_model":
+                        cfg.wandb_params.tags.append(f"{tag}_{value.split('/')[-1]}")
+                    else:
+                        cfg.wandb_params.tags.append(f"{tag}_{value}")
                     if tag == "reward_function":
                         print("Setting reward function from override")
                         cfg.rl_params.reward_function = [value.strip('[]')]
