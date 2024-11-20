@@ -114,7 +114,8 @@ def training(
         checkpoint,
         debug_from,
         run_name="",
-        eval_output_path=None
+        eval_output_path=None,
+        last_iteration = 0
 ):
     # Initialize a buffer for storing (log_probs, reward) pairs
     max_buffer_size = 100000  # Buffer can hold up to 1,000,000 log_probs
@@ -200,7 +201,6 @@ def training(
     if rlp.meta_model and Path(rlp.meta_model).exists():
         print(f"Loading meta_model from {rlp.meta_model}")
         action_selector.load_state_dict(torch.load(rlp.meta_model))
-        #action_selector.param_network.load_state_dict(torch.load(rlp.meta_model))
 
     if rlp.optimizer and Path(rlp.optimizer).exists():
         print(f"Loading optimizer from {rlp.optimizer}")
@@ -264,8 +264,8 @@ def training(
             gt_image = viewpoint_cam.original_image.cuda()
             Ll1 = l1_loss(image, gt_image)
             ssim_value = ssim(image, gt_image)
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
-    
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)       
+
             loss.backward()
 
             # Compute PSNR for logging
@@ -277,7 +277,7 @@ def training(
                 wandb_logger.log_optimization_iteration(
                     iteration, i, gaussians, Ll1, psnr_value, ssim_value, loss, image, gt_image
                 )
-
+            
             # Get first psnr value to compare for reward so its not 0 for the first iteration
             if last_iter_psnr == 0 and iteration == opt.densify_from_iter:
                 # Compute average PSNR and contributions for initialization
@@ -569,10 +569,13 @@ def compute_average_psnr_and_contributions(
             # Accumulate opacities and radii
             opacities_sum += eval_opacities
             radii_sum += eval_radii.float()
+            # Deleting variables and empty GPU chace to avoid out of memory error
+            del eval_render_pkg, eval_image, eval_radii
+            torch.cuda.empty_cache()
 
     # Average PSNR over all views
     average_psnr = sum(psnr_values) / num_views
-
+    torch.cuda.empty_cache()
     return average_psnr, opacities_sum, radii_sum
 
 
@@ -738,7 +741,8 @@ if __name__ == "__main__":
         args.start_checkpoint,
         args.debug_from,
         args.run_name,
-        args.eval_output_path
+        args.eval_output_path,
+        last_iteration
     )
 
     # All done

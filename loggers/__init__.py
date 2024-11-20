@@ -87,10 +87,14 @@ class WandBLogger:
             step=iteration
         )
 
-    def log_rl_loss(self, iteration, loss, advantage, policy_optimizer):
+    def log_rl_loss(self, iteration, loss, advantage, rewards, policy_optimizer):
         iteration += self.last_iteration  # Adjust the iteration number
         lr = policy_optimizer.param_groups[0]['lr']
         wandb.log({
             "rl_train_iter/learning_rate": lr,
             "rl_train_iter/loss": loss.item(),
         },step = iteration)
+        for i, adv in enumerate(advantage):
+            wandb.log({f"rl_train_iter/candidate_{i}/advantage": adv.item()}, step = iteration)
+        for i, rew in enumerate(rewards):
+            wandb.log({f"rl_train_iter/candidate_{i}/reward": rew.item()}, step = iteration)

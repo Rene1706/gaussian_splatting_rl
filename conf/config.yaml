@@ -92,8 +92,8 @@ rl_params:
   complexity_penalty: 0.001
   psnr_weight: 1.0
   late_reward_bonus: 0.00001
-  increase_bias: 1.5
-  decrease_bias: -1.5
+  increase_bias: 2.0
+  decrease_bias: -2.0
   clip_param: 0.2
   ppo_update_frequency: 3
   reward_function: ["reward_diff_psnr_relative"]

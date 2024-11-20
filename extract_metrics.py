@@ -129,6 +129,7 @@ def save_results_to_csv(results, output_file):
     df.to_json(output_file, index=False)
 
 if __name__ == "__main__":
+    # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Process folders and extract metrics.")
     parser.add_argument('--base_folder', required=True, help='Path to the base folder')
     parser.add_argument('--output_file', required=True, help='Output file where results will be saved')
