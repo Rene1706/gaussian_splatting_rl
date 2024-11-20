@@ -138,7 +138,7 @@ class ParamNetwork(nn.Module):
         # Example: Increase the bias for a specific action to increase its initial probability
         # Assuming you want to favor the first action initially:
         self.fc3.bias.data[0] = 2.0  # Increase bias for the first action
-        self.fc3.bias.data[1] = -2.0  # Decrease bias for the second action
+        self.fc3.bias.data[1] = -2.0  # Decrease bias for the second actions
         self.fc3.bias.data[2] = -2.0  # Decrease bias for the third action
     
     def forward(self, x):
