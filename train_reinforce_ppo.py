@@ -119,7 +119,6 @@ def training(
 ):
     # Initialize a buffer for storing (log_probs, reward) pairs
     max_buffer_size = 100000  # Buffer can hold up to 1,000,000 log_probs
-    num_views = 50
     # Initialize buffers for storing log_probs and rewards
     replay_buffer = ReplayBuffer(max_buffer_size)
     # Load the replay buffer if it exists
@@ -132,6 +131,7 @@ def training(
     last_iter = 0
     last_iter_psnr = 0
     delta_gaussians = 0
+    num_views = 50
     # Get reward function to be used
     reward_function_name = rlp.reward_function
     print("Reward function used: ", reward_function_name)
@@ -214,7 +214,6 @@ def training(
     candidates_created = 0  # Counter when the last candidates were created
     for iteration in range(first_iter, opt.iterations + 1):
         if iteration - candidates_created > opt.densification_interval * 5:
-            # Check if there are valid rewards
             if gaussian_selection_rewards and len(gaussian_selection_rewards) > 0:
                 # Convert rewards to tensors if they aren't already
                 rewards_tensor = torch.stack([torch.tensor(r, dtype=torch.float32, device="cuda") for r in gaussian_selection_rewards])
@@ -279,10 +278,10 @@ def training(
                     iteration, i, gaussians, Ll1, psnr_value, ssim_value, loss, image, gt_image
                 )
 
-            # Get first psnr value to compare for reward so it's not 0 for the first iteration
+            # Get first psnr value to compare for reward so its not 0 for the first iteration
             if last_iter_psnr == 0 and iteration == opt.densify_from_iter:
-                # Compute average PSNR for initialization
-                average_psnr = compute_average_psnr_and_contributions(
+                # Compute average PSNR and contributions for initialization
+                average_psnr, _, _ = compute_average_psnr_and_contributions(
                     gaussians=gaussians,
                     scene=scene,
                     pipe=pipe,
@@ -299,56 +298,35 @@ def training(
 
             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
+            # TODO: Calculate better reward for gaussian selection
             if iteration < opt.densify_until_iter:
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                    # Compute average PSNR and per-Gaussian rewards
-                    average_psnr, average_per_gaussian_reward = compute_average_psnr_and_contributions(
+                    # ! Render multiple images for RL agent reward
+                    average_psnr, _, _ = compute_average_psnr_and_contributions(
                         gaussians=gaussians,
                         scene=scene,
                         pipe=pipe,
                         background=background,
-                        reward_function=reward_function,
-                        last_psnr=last_iter_psnr,
-                        rl_params=rlp,
-                        iteration=iteration,
-                        num_views=num_views,
-                        delta_gaussians=gaussians_delta[i],
-                        dataset=dataset
-                    )
-
+                        num_views=num_views
+                        )
+                    # Normalize visibility counts
+                    reward = reward_function(loss=loss,
+                                            psnr=average_psnr,
+                                            last_psnr=last_iter_psnr,
+                                            delta_gaussians=gaussians_delta[i],
+                                            gaussians=gaussians,
+                                            iteration=iteration,
+                                            rl_params=rlp,
+                                            dataset_name=dataset.source_path.split("/")[-1])
+                    
+                    # Update gaussian_selection_psnr[i] with the exponential moving average
+                    gaussian_selection_rewards[i] = reward
                     gaussian_selection_psnr[i] = exponential_moving_average(gaussian_selection_psnr[i], average_psnr)
                     
-                    # Update the overall reward for this candidate (if needed)
-                    candidate_reward = average_per_gaussian_reward.sum().item()
-                    gaussian_selection_rewards[i] = torch.tensor(candidate_reward, dtype=torch.float32, device="cuda")
-                    #print("Mean: ",average_per_gaussian_reward.mean())
-                    #print("std: ",average_per_gaussian_reward.std())
-
-                    # Map rewards to parent Gaussians
-                    parent_indices = gaussians.parent_indices.cpu().numpy()
-                    per_gaussian_rewards_np = average_per_gaussian_reward.detach().cpu().numpy()
-
-                    parent_rewards = {}
-                    parent_counts = {}
-
-                    for idx, parent_idx in enumerate(parent_indices):
-                        if parent_idx not in parent_rewards:
-                            parent_rewards[parent_idx] = 0.0
-                            parent_counts[parent_idx] = 0
-                        parent_rewards[parent_idx] += per_gaussian_rewards_np[idx]
-                        parent_counts[parent_idx] += 1
-
-                    # Average rewards for each parent Gaussian
-                    for parent_idx in parent_rewards:
-                        parent_rewards[parent_idx] /= parent_counts[parent_idx]
-                    
-
                     # * Only log final reward before next densification
                     with torch.no_grad():
                         additional_rewards = {}
-                        wandb_logger.log_densification_iteration(
-                            iteration, i, 0, average_per_gaussian_reward, additional_rewards
-                        )
+                        wandb_logger.log_train_iter_candidate(iteration, i, gaussians, Ll1, average_psnr, ssim_value, loss, reward, image, gt_image, additional_rewards)
                     # Update scene.gaussians with the best candidate
                     if gaussian_selection_rewards and len(gaussian_selection_rewards) > 0:
                         rewards_tensor = torch.stack([torch.tensor(r, dtype=torch.float32, device="cuda") for r in gaussian_selection_rewards])
@@ -359,7 +337,6 @@ def training(
             else:
                 # No densification, maintain current gaussians
                 scene.gaussians = gaussian_candidate_list[0]
-        
         iter_end.record()
 
         with torch.no_grad():
@@ -378,10 +355,7 @@ def training(
             # Log and save
             if iteration in saving_iterations:
                 print(f"\n[ITER {iteration}] Saving Gaussians")
-                if scene.gaussians is not None:
-                    scene.save(iteration)
-                else:
-                    print("Warning: scene.gaussians is None, skipping save.")
+                scene.save(iteration)
 
             # Densification
             if iteration < opt.densify_until_iter:
@@ -398,24 +372,22 @@ def training(
                         for candidate_idx in range(len(action_candidates)):
                             actions = action_candidates[candidate_idx]  # Shape [100000]
                             old_log_probs = log_probability_candidates[candidate_idx]  # Shape [100000]
+                            reward = gaussian_selection_rewards[candidate_idx]  # Scalar
                             inputs = inputs_candidates  # Shape [100000, 3]
-                            gaussians = gaussian_candidate_list[candidate_idx]
-                            parent_indices = gaussians.parent_indices.cpu().numpy()
 
-                            # Prepare data for replay buffer
-                            inputs_np = inputs.cpu().numpy()
-                            actions_np = actions.cpu().numpy()
-                            log_probs_np = old_log_probs.cpu().numpy()
+                            # Combine inputs and actions into a list of tuples
+                            input_action_pairs = list(zip(inputs, actions, old_log_probs))
 
-                            # Store per-Gaussian entries
-                            for idx in range(len(parent_indices)):
-                                parent_idx = parent_indices[idx]
-                                input_tensor = torch.from_numpy(inputs_np[parent_idx]).to("cuda")
-                                action= actions_np[parent_idx]
-                                log_prob = log_probs_np[parent_idx]
-                                reward = parent_rewards.get(parent_idx, 0.0)  # Reward for parent Gaussian
-                                #print("Added : ", input, action, log_prob, reward)
-                                replay_buffer.add(input_tensor, action, log_prob, reward)
+                            # Randomly select 25% of the input-action pairs
+                            # ? Problem if numppoints is very low after a while this will not fill the buffer
+                            # ? Therefore most of the time old values will be selected
+                            sample_size = max(1, int(0.25 * len(input_action_pairs)))
+                            sampled_pairs = sample(input_action_pairs, sample_size)
+
+                            # Iterate through the sampled pairs and store them in the replay buffer
+                            for input, action, old_log_prob in sampled_pairs:
+                                #print("Added: ", input, action, old_log_prob, reward)
+                                replay_buffer.add(input, action, old_log_prob, reward)
 
                         break_training = False
                         if rlp.train_rl:
@@ -425,6 +397,7 @@ def training(
                             if (densification_counter) % rlp.ppo_update_frequency == 0 and rlp.train_rl or break_training:
                                 # Sample from the replay buffer
                                 sampled_inputs, sampled_actions, sampled_old_log_probs, sampled_rewards = replay_buffer.sample(batch_size=max(1, int(0.3 * replay_buffer.size())))
+                                #print("Sampled inputs: ", sampled_inputs)
                                 # PPO update
                                 ppo_loss = ppo_update(action_selector, policy_optimizer, sampled_inputs, sampled_actions, sampled_rewards, sampled_old_log_probs, rlp.clip_param)
                                 print("PPO loss:", ppo_loss)
@@ -444,8 +417,6 @@ def training(
                     gaussians_best_idx = torch.stack(gaussian_selection_rewards).argmax()
                     #print(f"Rewards: {gaussian_selection_rewards}, idx: {gaussians_best_idx}")
                     gaussians = gaussian_candidate_list[gaussians_best_idx]
-                    # Reset parent_indices to match current indices
-                    gaussians.parent_indices = torch.arange(gaussians.num_points, device="cuda")
                     last_iter_psnr = gaussian_selection_psnr[gaussians_best_idx]
                     scene.gaussians = gaussians
                     size_threshold = (
@@ -535,14 +506,15 @@ def save_last_iteration(train_rl, iteration):
         f.write(str(iteration))
 
 def get_last_iteration(train_rl):
+    iteration_file = Path("not_existing.txt")
     if train_rl:
         iteration_file = Path("last_iteration_train.txt")
-    else: 
-        iteration_file = Path("last_iteration_eval.txt")
+
     if iteration_file.exists():
         with iteration_file.open("r") as f:
             return int(f.read().strip())
     return 0
+
 
 def compute_average_psnr_and_contributions(
     gaussians,
@@ -550,17 +522,11 @@ def compute_average_psnr_and_contributions(
     pipe,
     background,
     num_views=10,
-    device="cuda",
-    reward_function=None,
-    last_psnr=None,
-    rl_params=None,
-    iteration=None,
-    delta_gaussians=None,
-    dataset = None
+    device="cuda"
 ):
     """
-    Computes the average PSNR over multiple random views and optionally accumulates per-Gaussian rewards.
-
+    Computes the average PSNR over multiple random views and accumulates opacities and radii sums.
+    
     Args:
         gaussians (GaussianModel): The current Gaussian model.
         scene (Scene): The scene containing the cameras.
@@ -568,21 +534,18 @@ def compute_average_psnr_and_contributions(
         background (torch.Tensor): The background color or image.
         num_views (int): Number of random views to sample.
         device (str): Device to use ("cuda" or "cpu").
-        reward_function (callable, optional): The reward function to compute per-view reward.
-        last_psnr (float, optional): The PSNR from the previous iteration.
-        rl_params: Reinforcement learning parameters.
-        iteration (int, optional): Current iteration number.
-
+    
     Returns:
         average_psnr (float): The average PSNR over the sampled views.
-        average_per_gaussian_reward (torch.Tensor, optional): Average per-Gaussian reward if reward_function is provided.
+        opacities_sum (torch.Tensor): Accumulated opacities sum per Gaussian.
+        radii_sum (torch.Tensor): Accumulated radii sum per Gaussian.
     """
     psnr_values = []
     num_gaussians = gaussians.num_points
 
-    # Initialize tensor to accumulate per-Gaussian rewards if reward_function is provided
-    if reward_function is not None:
-        per_gaussian_reward_sum = torch.zeros(num_gaussians, device=device)
+    # Initialize tensors to accumulate contributions
+    opacities_sum = torch.zeros(num_gaussians, device=device)
+    radii_sum = torch.zeros(num_gaussians, device=device)
 
     with torch.no_grad():
         for _ in range(num_views):
@@ -592,54 +555,28 @@ def compute_average_psnr_and_contributions(
             # Render without computing gradients
             eval_render_pkg = render(eval_viewpoint_cam, gaussians, pipe, background)
             eval_image = eval_render_pkg["render"]
-            eval_radii = eval_render_pkg["radii"]  # Shape: [num_gaussians]
-            eval_opacities = gaussians.get_opacity.squeeze()  # Shape: [num_gaussians]
+            eval_radii = eval_render_pkg["radii"]  # Get the radii
 
-            # Compute PSNR for this view
+            # Get opacities
+            eval_opacities = gaussians.get_opacity  # Shape: [num_gaussians, 1]
+            eval_opacities = eval_opacities.squeeze()  # Shape: [num_gaussians]
+
+            # Compute PSNR
             eval_gt_image = eval_viewpoint_cam.original_image.to(device)
             eval_psnr = psnr(eval_image, eval_gt_image)
             psnr_values.append(eval_psnr.mean().item())
 
-            if reward_function is not None:
-                # Ensure all required arguments are provided
-                if last_psnr is None or rl_params is None or iteration is None:
-                    raise ValueError("Missing required arguments for reward_function.")
-
-                # Compute per-view reward using the reward function
-                reward = reward_function(
-                    psnr=eval_psnr.mean().item(),
-                    last_psnr=last_psnr,
-                    delta_gaussians=delta_gaussians,
-                    gaussians=gaussians,
-                    iteration=iteration,
-                    rl_params=rl_params,
-                    dataset_name=dataset.source_path.split("/")[-1])
-
-                # Compute per-Gaussian reward for this view
-                per_gaussian_reward_view = reward * eval_radii.float() * eval_opacities  # Shape: [num_gaussians]
-
-                # Accumulate per-Gaussian rewards
-                per_gaussian_reward_sum += per_gaussian_reward_view
-
-            # Clean up to avoid out of memory issues
+            # Accumulate opacities and radii
+            opacities_sum += eval_opacities
+            radii_sum += eval_radii.float()
+            # Deleting variables and empty GPU chace to avoid out of memory error
             del eval_render_pkg, eval_image, eval_radii
             torch.cuda.empty_cache()
 
     # Average PSNR over all views
     average_psnr = sum(psnr_values) / num_views
-
-    if reward_function is not None:
-        # Compute average per-Gaussian reward
-        average_per_gaussian_reward = per_gaussian_reward_sum / num_views  # Shape: [num_gaussians]
-
-        # Handle any potential NaNs or infinities
-        average_per_gaussian_reward = torch.nan_to_num(
-            average_per_gaussian_reward, nan=0.0, posinf=0.0, neginf=0.0
-        )
-
-        return average_psnr, average_per_gaussian_reward
-    else:
-        return average_psnr
+    torch.cuda.empty_cache()
+    return average_psnr, opacities_sum, radii_sum
 
 
 def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, max_screen_size, extent):

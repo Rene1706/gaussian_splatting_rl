@@ -3,109 +3,132 @@ import json
 import re
 import argparse
 
-def find_numbered_folder(output_folder):
-    """Finds the folder inside 'output' that starts with a number."""
-    for folder_name in os.listdir(output_folder):
-        folder_path = os.path.join(output_folder, folder_name)
-        if os.path.isdir(folder_path) and re.match(r'^\d+', folder_name):
-            return folder_path
-    return None
+def extract_metrics_from_result_file(result_file_path):
+    """Extracts SSIM and PSNR from a results_<datasetname>.json file."""
+    with open(result_file_path, 'r') as f:
+        data = json.load(f)
+        if data:
+            first_key = list(data.keys())[0]
+            ssim = data[first_key].get('SSIM')
+            psnr = data[first_key].get('PSNR')
+            return ssim, psnr
+    return None, None
 
-def find_run_id(wandb_folder):
-    """Find the run ID from the folder name inside 'wandb'."""
-    for folder_name in os.listdir(wandb_folder):
-        if folder_name.startswith("offline-run-"):
-            match = re.search(r'RL_eval_\d+_\d+_\d+_\d+', folder_name)
-            if match:
-                return match.group(0)
-    return None
-
-def extract_results_and_points(numbered_folder):
-    """Extracts SSIM, PSNR from results.json and number of points from gaussian_num_points.txt."""
-    results_file = os.path.join(numbered_folder, "results.json")
-    points_file = os.path.join(numbered_folder, "gaussian_num_points.txt")
-
-    # Initialize variables
-    ssim = psnr = num_points = None
-
-    # Read results.json
-    if os.path.exists(results_file):
-        with open(results_file, 'r') as f:
+def extract_num_points_from_points_file(points_file_path):
+    """Extracts num_points from a gaussian_num_points_<datasetname>.json or .txt file."""
+    num_points = None
+    if points_file_path.endswith('.json'):
+        with open(points_file_path, 'r') as f:
             data = json.load(f)
-            ours_key = list(data.keys())[0]  # Assuming there's only one key like "ours_30000"
-            ssim = data[ours_key].get("SSIM")
-            psnr = data[ours_key].get("PSNR")
-
-    # Read gaussian_num_points.txt
-    if os.path.exists(points_file):
-        with open(points_file, 'r') as f:
+            num_points = data.get('num_points')
+    else:
+        with open(points_file_path, 'r') as f:
             line = f.readline().strip()
             match = re.search(r'\d+', line)
             if match:
                 num_points = int(match.group(0))
+    return num_points
 
-    return ssim, psnr, num_points
+def find_hydra_folder(current_path):
+    """Finds the .hydra folder by traversing up the directory tree."""
+    while True:
+        hydra_folder = os.path.join(current_path, '.hydra')
+        if os.path.isdir(hydra_folder):
+            return hydra_folder
+        parent = os.path.dirname(current_path)
+        if parent == current_path:
+            return None
+        current_path = parent
+
+def extract_parameters_from_overrides(overrides_file):
+    """Extracts specified parameters from overrides.yaml."""
+    params = {}
+    with open(overrides_file, 'r') as f:
+        lines = f.readlines()
+        for line in lines:
+            line = line.strip()
+            if '=' in line:
+                key, value = line.split('=', 1)
+                key = key.lstrip('- ').strip()
+                value = value.strip().strip('"\'')  # Remove surrounding quotes
+                if key.startswith('rl_params.'):
+                    param_name = key[len('rl_params.'):]
+                    params[param_name] = value
+    return params
 
 def process_folders(base_folder):
-    """Processes each folder, extracts run_id, SSIM, PSNR, and num_points."""
+    """Recursively processes folders, extracts data, and returns a list of dictionaries."""
     results = []
 
-    for folder_name in os.listdir(base_folder):
-        folder_path = os.path.join(base_folder, folder_name)
+    for root, dirs, files in os.walk(base_folder):
+        result_files = [f for f in files if f.startswith('results_') and f.endswith('.json')]
+        points_files = [f for f in files if f.startswith('gaussian_num_points_') and (f.endswith('.json') or f.endswith('.txt'))]
 
-        # Skip if it's not a folder or if it's the .submit folder
-        if not os.path.isdir(folder_path) or folder_name == '.submit':
-            continue
+        for result_file in result_files:
+            dataset_name = result_file[len('results_'):-len('.json')]
 
-        output_folder = os.path.join(folder_path, 'output')
-        wandb_folder = os.path.join(folder_path, 'wandb')
+            possible_points_files = [pf for pf in points_files if pf.startswith(f'gaussian_num_points_{dataset_name}')]
+            if possible_points_files:
+                points_file = possible_points_files[0]
+            else:
+                print(f"No points file found for dataset {dataset_name} in {root}")
+                continue
 
-        if not os.path.isdir(output_folder) or not os.path.isdir(wandb_folder):
-            print(f"Required output or wandb folder not found in {folder_name}")
-            continue
+            result_file_path = os.path.join(root, result_file)
+            points_file_path = os.path.join(root, points_file)
 
-        # Find the numbered folder
-        numbered_folder = find_numbered_folder(output_folder)
-        if numbered_folder is None:
-            print(f"No numbered folder found in {output_folder}")
-            continue
+            ssim, psnr = extract_metrics_from_result_file(result_file_path)
+            num_points = extract_num_points_from_points_file(points_file_path)
 
-        # Extract run_id from wandb folder
-        run_id = find_run_id(wandb_folder)
-        if run_id is None:
-            print(f"Run ID not found in {wandb_folder}")
-            continue
+            hydra_folder = find_hydra_folder(root)
+            if hydra_folder is None:
+                print(f"No .hydra folder found for {root}")
+                continue
+            overrides_file = os.path.join(hydra_folder, 'overrides.yaml')
+            if not os.path.exists(overrides_file):
+                print(f"No overrides.yaml found in {hydra_folder}")
+                continue
+            other_params = extract_parameters_from_overrides(overrides_file)
 
-        # Extract SSIM, PSNR, and num_points
-        ssim, psnr, num_points = extract_results_and_points(numbered_folder)
+            # Use the meta_model path to find another overrides.yaml
+            if 'meta_model' in other_params:
+                meta_model_path = other_params['meta_model']
+                meta_model_path = meta_model_path.strip('"\'')
+                # Remove the filename to get the directory
+                meta_model_dir = os.path.dirname(meta_model_path)
+                meta_hydra_folder = os.path.join(meta_model_dir, '.hydra')
+                meta_overrides_file = os.path.join(meta_hydra_folder, 'overrides.yaml')
+                if os.path.exists(meta_overrides_file):
+                    print(meta_overrides_file)
+                    meta_params = extract_parameters_from_overrides(meta_overrides_file)
+                    print(meta_params)
+                    # Prefix meta parameters to distinguish them
+                    for key, value in meta_params.items():
+                        other_params[f'meta_{key}'] = value
+                else:
+                    print(f"No overrides.yaml found in {meta_hydra_folder}")
+            else:
+                print(f"meta_model not found in overrides.yaml at {overrides_file}")
 
-        if ssim is None or psnr is None or num_points is None:
-            print(f"Missing data in {numbered_folder}")
-            continue
+            data_entry = {
+                'dataset_name': dataset_name,
+                'SSIM': ssim,
+                'PSNR': psnr,
+                'num_points': num_points,
+                **other_params
+            }
 
-        # Store results
-        results.append({
-            "run_id": run_id,
-            "SSIM": ssim,
-            "PSNR": psnr,
-            "num_points": num_points
-        })
+            results.append(data_entry)
 
     return results
 
 def save_results_to_csv(results, output_file):
     """Saves results to a CSV file."""
-    import csv
-    with open(output_file, 'w', newline='') as csvfile:
-        fieldnames = ['run_id', 'SSIM', 'PSNR', 'num_points']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
-        writer.writeheader()
-        for result in results:
-            writer.writerow(result)
+    import pandas as pd
+    df = pd.DataFrame(results)
+    df.to_json(output_file, index=False)
 
 if __name__ == "__main__":
-    # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Process folders and extract metrics.")
     parser.add_argument('--base_folder', required=True, help='Path to the base folder')
     parser.add_argument('--output_file', required=True, help='Output file where results will be saved')
@@ -114,10 +137,8 @@ if __name__ == "__main__":
     base_folder = args.base_folder
     output_file = args.output_file
 
-    # Process folders and extract data
     results = process_folders(base_folder)
 
-    # Save results to CSV file
     if results:
         save_results_to_csv(results, output_file)
         print(f"Results saved to {output_file}")

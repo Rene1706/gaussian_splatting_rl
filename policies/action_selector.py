@@ -116,7 +116,7 @@ class GradNormThresholdSelector(ActionSelector):
 
 
 class ParamNetwork(nn.Module):
-    def __init__(self, input_size, hidden_size=128, output_size=3):
+    def __init__(self, input_size, hidden_size=128, output_size=4):
         super(ParamNetwork, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -140,7 +140,8 @@ class ParamNetwork(nn.Module):
         self.fc3.bias.data[0] = 2.0  # Increase bias for the first action
         self.fc3.bias.data[1] = -2.0  # Decrease bias for the second action
         self.fc3.bias.data[2] = -2.0  # Decrease bias for the third action
-    
+        self.fc3.bias.data[3] = -2.0  # Decrease bias for the third action
+
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
@@ -148,7 +149,7 @@ class ParamNetwork(nn.Module):
         return x
 
 class ParamBasedActionSelector(ActionSelector):
-    def __init__(self, input_size=3, k=2, hidden_size=128):
+    def __init__(self, input_size=3, k=2, hidden_size=16):
         super().__init__(k=k)
         self.param_network = ParamNetwork(input_size, hidden_size)
 
@@ -187,3 +188,5 @@ class ParamBasedActionSelector(ActionSelector):
         log_probs = policy.log_prob(actions).to("cuda")
 
         return actions, inputs, log_probs
+    
+
