@@ -118,7 +118,7 @@ def training(
         last_iteration = 0
 ):
     # Initialize a buffer for storing (log_probs, reward) pairs
-    max_buffer_size = 500000  # Buffer can hold up to 1,000,000 log_probs
+    max_buffer_size = 100000  # Buffer can hold up to 1,000,000 log_probs
     num_views = 50
     # Initialize buffers for storing log_probs and rewards
     replay_buffer = ReplayBuffer(max_buffer_size)
@@ -312,7 +312,8 @@ def training(
                         rl_params=rlp,
                         iteration=iteration,
                         num_views=num_views,
-                        delta_gaussians=gaussians_delta[i]
+                        delta_gaussians=gaussians_delta[i],
+                        dataset=dataset
                     )
 
                     gaussian_selection_psnr[i] = exponential_moving_average(gaussian_selection_psnr[i], average_psnr)
@@ -554,7 +555,8 @@ def compute_average_psnr_and_contributions(
     last_psnr=None,
     rl_params=None,
     iteration=None,
-    delta_gaussians=None
+    delta_gaussians=None,
+    dataset=None
 ):
     """
     Computes the average PSNR over multiple random views and optionally accumulates per-Gaussian rewards.
@@ -610,7 +612,8 @@ def compute_average_psnr_and_contributions(
                     delta_gaussians=delta_gaussians,
                     gaussians=gaussians,
                     iteration=iteration,
-                    rl_params=rl_params
+                    rl_params=rl_params,
+                    dataset_name=dataset.source_path.split("/")[-1]
                 )
 
                 # Compute per-Gaussian reward for this view

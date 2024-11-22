@@ -238,7 +238,7 @@ def readNerfSyntheticInfo(path, white_background, eval, start_number_gaussians, 
         num_pts = start_number_gaussians
         xyz_scale = 1.0
         print(f"Generating random point cloud ({num_pts})...")
-        
+        np.random.seed(42)
         # We create random points inside the bounds of the synthetic Blender scenes
         xyz = np.random.random((num_pts, 3)) * xyz_scale - xyz_scale/2.0
         shs = np.random.random((num_pts, 3)) / 255.0
