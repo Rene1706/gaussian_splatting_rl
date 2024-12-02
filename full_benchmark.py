@@ -149,38 +149,35 @@ def train_and_evaluate(cfg, datasets, output_path):
                 run_command(training_command)
 
     if not cfg.eval_params.skip_eval:
-        for eval_dataset in evaluation_datasets:
-            print(f"Eval on dataset {eval_dataset}")
-            #cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, eval_dataset)
-            cfg.model_params.source_path = eval_dataset
-            cfg.wandb_params.name = f"Benchmark_{unique_str}"
-            cfg.wandb_params.resume = "never"
-            cfg.wandb_params.id = f"Benchmark_{unique_str}"
-            cfg.wandb_params.group = "benchmark"
-            add_eval_tags(cfg)            
-            # Skip optimizing the RL model
-            cfg.rl_params.train_rl = False
-            training_command = create_training_command(cfg)
-            print(training_command)
-            run_command(training_command)
-            get_training_config(cfg.rl_params.meta_model)
+        #cfg.model_params.source_path = os.path.join(script_dir, cfg.eval_params.data_path, eval_dataset)
+        cfg.wandb_params.name = f"Benchmark_{unique_str}"
+        cfg.wandb_params.resume = "never"
+        cfg.wandb_params.id = f"Benchmark_{unique_str}"
+        cfg.wandb_params.group = "benchmark"
+        add_eval_tags(cfg)            
+        # Skip optimizing the RL model
+        cfg.rl_params.train_rl = False
+        training_command = create_training_command(cfg)
+        print(training_command)
+        run_command(training_command)
+        get_training_config(cfg.rl_params.meta_model)
 
-            # After training_command, run render.py and metrics.py, then delete train_test folders
-            output_folder = get_latest_output_folder("output")
-            if output_folder:
-                # Run render.py
-                render_command = f"python {script_dir}/render.py -m \"{output_folder}\""
-                print(render_command)
-                run_command(render_command)
-                # Run metrics.py
-                metrics_command = f"python {script_dir}/metrics.py -m \"{output_folder}\""
-                print(render_command)
-                run_command(metrics_command)
-                # Delete train and test folders
-                delete_train_test_folders(output_folder)
-                rename_metrics_output(output_folder, eval_dataset)
-            else:
-                print("No output folder found to process.")
+        # After training_command, run render.py and metrics.py, then delete train_test folders
+        output_folder = get_latest_output_folder("output")
+        if output_folder:
+            # Run render.py
+            render_command = f"python {script_dir}/render.py -m \"{output_folder}\""
+            print(render_command)
+            run_command(render_command)
+            # Run metrics.py
+            metrics_command = f"python {script_dir}/metrics.py -m \"{output_folder}\""
+            print(render_command)
+            run_command(metrics_command)
+            # Delete train and test folders
+            #delete_train_test_folders(output_folder)
+            #rename_metrics_output(output_folder, eval_dataset)
+        else:
+            print("No output folder found to process.")    
 
 def add_eval_tags(cfg):
     # Add tags for evaluation

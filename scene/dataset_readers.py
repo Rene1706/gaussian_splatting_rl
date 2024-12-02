@@ -232,13 +232,13 @@ def readNerfSyntheticInfo(path, white_background, eval, start_number_gaussians, 
 
     ply_path = os.path.join(path, "points3d.ply")
     #print("ply_path: ", ply_path)
-    if True:#not os.path.exists(ply_path):
+    if not os.path.exists(ply_path):
         # Since this data set has no colmap data, we start with random points
         #num_pts = 100_000
         num_pts = start_number_gaussians
-        xyz_scale = 1.0
+        xyz_scale = 2.6
         print(f"Generating random point cloud ({num_pts})...")
-        
+        #np.random.seed(42)
         # We create random points inside the bounds of the synthetic Blender scenes
         xyz = np.random.random((num_pts, 3)) * xyz_scale - xyz_scale/2.0
         shs = np.random.random((num_pts, 3)) / 255.0

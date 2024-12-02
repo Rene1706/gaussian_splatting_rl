@@ -277,7 +277,8 @@ def training(
                 wandb_logger.log_optimization_iteration(
                     iteration, i, gaussians, Ll1, psnr_value, ssim_value, loss, image, gt_image
                 )
-
+            if iteration % 5000 == 0 and not rlp.train_rl:
+                wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
             # Get first psnr value to compare for reward so its not 0 for the first iteration
             if last_iter_psnr == 0 and iteration == opt.densify_from_iter:
                 # Compute average PSNR and contributions for initialization
@@ -310,14 +311,17 @@ def training(
                         num_views=num_views
                         )
                     # Normalize visibility counts
-                    reward = reward_function(loss=loss,
-                                            psnr=average_psnr,
-                                            last_psnr=last_iter_psnr,
-                                            delta_gaussians=gaussians_delta[i],
-                                            gaussians=gaussians,
-                                            iteration=iteration,
-                                            rl_params=rlp,
-                                            dataset_name=dataset.source_path.split("/")[-1])
+                    if rlp.train_rl:
+                        reward = reward_function(loss=loss,
+                                                psnr=average_psnr,
+                                                last_psnr=last_iter_psnr,
+                                                delta_gaussians=gaussians_delta[i],
+                                                gaussians=gaussians,
+                                                iteration=iteration,
+                                                rl_params=rlp,
+                                                dataset_name=dataset.source_path.split("/")[-1])
+                    else: 
+                        reward = torch.tensor(0, dtype=torch.float32, device="cuda")
                     
                     # Update gaussian_selection_psnr[i] with the exponential moving average
                     gaussian_selection_rewards[i] = reward
@@ -435,8 +439,6 @@ def training(
                     gaussian_selection_rewards.clear()
                     gaussian_selection_psnr.clear()
                     gaussians_delta.clear()
-                    if iteration % 5000 == 0 and not rlp.train_rl:
-                        wandb_logger.log_point_cloud(gaussians.point_cloud, iteration)
                     for i, actions in enumerate(action_candidates):
                         gaussian_clone = deepcopy(gaussians)
                         #visualize_grad_scaling(gaussian_clone, name=f"Iteration {iteration:05d}:{i}", scene=scene, actions=actions)
