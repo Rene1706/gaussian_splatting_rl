@@ -21,16 +21,19 @@ import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
-from arguments import ModelParams, PipelineParams, OptimizationParams
+from arguments import ModelParams, PipelineParams, OptimizationParams, RLParams
 import wandb
 import importlib
+from pathlib import Path
+# Import the policy selector
+from policies.action_selector import ParamBasedActionSelector
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, rlp, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
     # Import the rewards module
     rewards_module = importlib.import_module("rewards.rewards")
@@ -58,6 +61,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+
+    # Initialize the action selector
+    k = 1  # Number of candidates
+    hidden_size = 16  # Adjust as needed
+    action_selector = ParamBasedActionSelector(k=k, hidden_size=hidden_size).to("cuda")
+
+    if rlp.base_model and Path(rlp.base_model).exists():
+        print(f"Loading base_model from {rlp.base_model}")
+        action_selector.param_network.load_state_dict(torch.load(rlp.base_model))
+
+    # Load RL meta model, optimizer and scheduler
+    if rlp.meta_model and Path(rlp.meta_model).exists():
+        print(f"Loading meta_model from {rlp.meta_model}")
+        action_selector.load_state_dict(torch.load(rlp.meta_model))
+
     for iteration in range(first_iter, opt.iterations + 1):
         iter_start.record()
 
@@ -123,7 +141,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                    # Get actions from the policy selector
+                    with torch.no_grad():
+                        actions_list, inputs, log_probs = action_selector(
+                            gaussians,
+                            iteration=iteration,
+                            scene_extent=scene.cameras_extent,
+                        )
+                    # Since k=1, we only have one set of actions
+                    actions = actions_list[0]
+                    # Apply actions to the gaussians
+                    n_cloned, n_splitted, n_pruned, n_gaussians, n_noop = apply_actions(
+                        gaussians,
+                        actions,
+                        min_opacity=0.005,
+                        max_screen_size=size_threshold,
+                        extent=scene.cameras_extent,
+                    )
                     # Log input variables to densify_and_prune
                     log_data = {
                         "densify_grad_threshold": opt.densify_grad_threshold,
@@ -133,6 +167,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     }
                     with open(os.path.join(args.model_path, "densify_and_prune_log.txt"), "a") as log_file:
                         log_file.write(f"{log_data}\n")
+                    wandb.log({
+                        f'benchmark_densify/n_cloned': n_cloned,
+                        f'benchmark_densify/n_splitted': n_splitted,
+                        f'benchmark_densify/n_pruned': n_pruned,
+                        f'benchmark_densify/n_gaussians': n_gaussians,
+                        f'benchmark_densify/n_noop': n_noop,
+                        f'benchmark_densify/% n_cloned': (n_cloned/n_gaussians)*100,
+                        f'benchmark_densify/% n_splitted': (n_splitted/n_gaussians)*100,
+                        f'benchmark_densify/% n_pruned': (n_pruned/n_gaussians)*100,
+                        f'benchmark_densify/% n_noop': (n_noop/n_gaussians)*100
+                    }, step=iteration)
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
 
@@ -237,6 +282,46 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
 
+
+def apply_actions(gaussians: GaussianModel, actions: torch.Tensor, min_opacity, max_screen_size, extent):
+    noop_mask = actions == 0
+    clone_mask = actions == 1
+    split_mask = actions == 2
+
+    # Extend split mask to have the correct size after cloning
+    n_cloned_points = torch.sum(clone_mask)
+    split_mask = torch.cat(
+        [
+            split_mask,
+            torch.zeros(n_cloned_points, device="cuda", dtype=torch.bool),
+        ]
+    )
+
+    # Extend prune mask to have the correct size after cloning and splitting
+    N = 2
+    n_splitted_points = torch.sum(split_mask) * (N - 1)
+    n_noop_points = torch.sum(noop_mask)
+
+    # Number of points before densification is done for correct logging
+    n_gaussians = gaussians.num_points
+
+    # Clone and split
+    gaussians.densify_and_clone_selected(clone_mask)
+    gaussians.densify_and_split_selected(split_mask, N=N)
+
+    # Prune points
+    n_pruned_points = gaussians.select_and_prune_points(min_opacity, max_screen_size, extent)
+
+    print(f"Cloned: {n_cloned_points}",
+          f"Splitted: {n_splitted_points}",
+          f"Pruned: {n_pruned_points}",
+          f"NOOP: {torch.sum(noop_mask)}",
+          f"NUMP: {n_gaussians}")
+    
+    torch.cuda.empty_cache()
+    return n_cloned_points, n_splitted_points, n_pruned_points, n_gaussians, n_noop_points
+
+
 if __name__ == "__main__":
     # Initialize wandb
     wandb.init(project="master", mode="offline", save_code=True, tags=["default_3dgs"])
@@ -245,6 +330,7 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
+    rlp = RLParams(parser)
     parser.add_argument('--ip', type=str, default="127.0.0.1")
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
@@ -264,7 +350,7 @@ if __name__ == "__main__":
 
     # Start GUI server, configure and run training
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    training(lp.extract(args), op.extract(args), pp.extract(args), rlp.extract(args),args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
     # Finish wandb run
     wandb.finish()
     # All done
